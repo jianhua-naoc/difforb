@@ -1,0 +1,84 @@
+[datasets.eop]
+title = "IERS EOP 20 C04 Earth orientation table"
+files = ["iers/eopc04.dPsi_dEps.1962-now.txt"]
+installable = true
+license = "See upstream IERS data terms."
+instructions = "Download the C04 table and place it at iers/eopc04.dPsi_dEps.1962-now.txt under the DiffOrb data directory."
+
+[[datasets.eop.sources]]
+path = "iers/eopc04.dPsi_dEps.1962-now.txt"
+url = "https://datacenter.iers.org/data/latestVersion/EOP_20u24_C04_0h_dPsi_dEps_1962-now.txt"
+
+[[datasets.eop.sources]]
+path = "iers/eopc04.dPsi_dEps.1962-now.txt"
+url = "https://hpiers.obspm.fr/iers/eop/eopc04/eopc04.dPsi_dEps.1962-now"
+
+[datasets.mpc-obs-codes]
+title = "Minor Planet Center observatory code table"
+files = ["obs_code/iau_obs_codes.txt"]
+installable = true
+license = "See upstream Minor Planet Center data terms."
+instructions = "Download the MPC observatory code table and place it at obs_code/iau_obs_codes.txt under the DiffOrb data directory."
+
+[[datasets.mpc-obs-codes.sources]]
+path = "obs_code/iau_obs_codes.txt"
+url = "https://www.minorplanetcenter.net/iau/lists/ObsCodesF.html"
+transform = "html_pre"
+
+[datasets.jpl-radar-codes]
+title = "JPL radar observatory code table"
+files = ["obs_code/jpl_radar_codes.txt"]
+installable = false
+license = "Bundled with DiffOrb under Apache-2.0."
+instructions = "This DiffOrb-maintained table is bundled with the package. To override it, place obs_code/jpl_radar_codes.txt under the DiffOrb data directory."
+
+[datasets.debias2018]
+title = "Eggl et al. astrometric debias table"
+files = [
+    "debias_2018/README.txt",
+    "debias_2018/bias.dat",
+    "debias_2018/tiles.dat",
+]
+installable = true
+license = "See upstream debias data terms and citation requirements."
+instructions = "Download the Eggl et al. debias_2018 archive from JPL SSD and place README.txt, bias.dat, and tiles.dat under debias_2018/ in the DiffOrb data directory."
+
+[[datasets.debias2018.sources]]
+url = "https://ssd.jpl.nasa.gov/ftp/ssd/debias/debias_2018.tgz"
+archive = "tgz"
+members = [
+    { member = "README.txt", path = "debias_2018/README.txt" },
+    { member = "bias.dat", path = "debias_2018/bias.dat" },
+    { member = "tiles.dat", path = "debias_2018/tiles.dat" },
+]
+
+[datasets.weights]
+title = "Astrometric weighting rule table"
+files = ["weights.csv"]
+installable = false
+license = "Bundled with DiffOrb under Apache-2.0."
+instructions = "This DiffOrb-maintained table is bundled with the package. To override it, place weights.csv under the DiffOrb data directory, or pass an explicit filepath to VFCC17WeightPolicy."
+
+[datasets.dtdb-series]
+title = "Fairhead-Bretagnon TT/TDB coefficient table"
+files = ["dtdb_series/coff_dtdb.npy"]
+installable = false
+license = "Bundled with DiffOrb under Apache-2.0."
+instructions = "This DiffOrb-generated coefficient table is bundled with the package. To override it, place dtdb_series/coff_dtdb.npy under the DiffOrb data directory."
+
+[datasets.earth-rotation-series]
+title = "IAU nutation and CIO locator coefficient tables"
+files = [
+    "iau_cio_locator_series/coff_cos.npy",
+    "iau_cio_locator_series/coff_fundamental_args.npy",
+    "iau_cio_locator_series/coff_sin.npy",
+    "iau_nutation_series/M_lunisolar.npy",
+    "iau_nutation_series/M_planetary.npy",
+    "iau_nutation_series/epsilon_c_lunisolar.npy",
+    "iau_nutation_series/epsilon_c_planetary.npy",
+    "iau_nutation_series/psi_c_lunisolar.npy",
+    "iau_nutation_series/psi_c_planetary.npy",
+]
+installable = false
+license = "Bundled with DiffOrb under Apache-2.0."
+instructions = "These DiffOrb-generated coefficient tables are bundled with the package. To override them, place the iau_cio_locator_series and iau_nutation_series directories under the DiffOrb data directory."

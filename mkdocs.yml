@@ -1,0 +1,165 @@
+site_name: DiffOrb
+site_description: Differentiable small-body orbit computation and orbit determination with JAX.
+site_url: https://difforb.readthedocs.io/en/latest/
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  logo: assets/brand/difforb-logo-white.png
+  favicon: assets/brand/difforb-logo-favicon.png
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/lightbulb-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/lightbulb
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to system preference
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - .
+          options:
+            docstring_style: numpy
+            docstring_options:
+              warn_unknown_params: false
+              warn_missing_types: false
+            inherited_members: false
+            members_order: source
+            merge_init_into_class: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - assets/vendor/katex/dist/katex.min.css
+  - stylesheets/header.css
+
+extra_javascript:
+  - assets/vendor/katex/dist/katex.min.js
+  - assets/vendor/katex/dist/contrib/auto-render.min.js
+  - javascripts/katex.js
+
+nav:
+  - Overview: index.md
+  - Installation: installation.md
+  - Concepts:
+      - Overview: concepts/index.md
+      - Foundations:
+          - Time Scales And Epoch Storage: concepts/time-scales-and-epoch-storage.md
+          - Frames And State Representation: concepts/frames-and-state-representation.md
+          - Keplerian Elements: concepts/keplerian-elements.md
+      - Batch Inputs And Shapes: concepts/batch-inputs-and-shapes.md
+      - Observer Geometry:
+          - Earth Rotation And Terrestrial Geometry: concepts/earth-rotation-and-terrestrial-geometry.md
+          - Earth Orientation Parameters: concepts/earth-orientation-parameters.md
+          - Observer Site Keys And Observer Types: concepts/observer-site-classes-and-observer-types.md
+      - Observation Models:
+          - Light-Time Model: concepts/light-time-model.md
+          - Photocenter Correction: concepts/photocenter-correction.md
+      - Propagation And Ephemeris Products:
+          - Dynamical Models: concepts/dynamical-models.md
+          - Numerical Integrators And Dense Trajectories: concepts/numerical-integrators-and-dense-trajectories.md
+          - Ephemeris Products: concepts/ephemeris-products.md
+      - Orbit Determination:
+          - Overview: concepts/orbit-determination-overview.md
+          - Initial Orbit Determination: concepts/initial-orbit-determination.md
+          - Differential Correction: concepts/differential-correction.md
+          - Weighting And Debiasing Models: concepts/weighting-and-debiasing-models.md
+          - Outlier Rejection: concepts/outlier-rejection.md
+  - Guides:
+      - Overview: guides/index.md
+      - Time And Epochs:
+          - Configure Earth Orientation Data: guides/configure-earth-orientation-data.md
+          - Create And Convert Time Objects: guides/create-and-convert-time-objects.md
+          - Convert Between UTC, TT, TDB, UT1: guides/convert-between-utc-tt-tdb-ut1.md
+      - Ephemerides And Bodies:
+          - Load SPK Kernels And Query Major Bodies: guides/load-spk-kernels-and-query-major-bodies.md
+          - Create And Convert Keplerian Elements: guides/create-and-convert-keplerian-elements.md
+          - Create A SmallBody From State Or Elements: guides/create-a-smallbody-from-state-or-elements.md
+      - States And Frames:
+          - Build State From Cartesian Data: guides/build-state-from-cartesian-data.md
+          - Transform State Between Frames: guides/transform-state-between-frames.md
+      - Observer Geometry:
+          - Get Earth Rotation Quantities And Matrices: guides/get-earth-rotation-quantities-and-matrices.md
+          - Create A Ground Site And Get Its GCRS State: guides/create-a-groundsite-and-get-its-gcrs-state.md
+          - Create A Space Site And Reuse Its GCRS State: guides/create-a-spacesite-and-reuse-its-gcrs-state.md
+      - Dynamics And Propagation:
+          - Configure Force Models And Dynamic Systems: guides/configure-force-models-and-dynamic-systems.md
+          - Propagate A SmallBody And Evaluate Dense Trajectories: guides/propagate-a-smallbody-and-evaluate-dense-trajectories.md
+      - Observation Products:
+          - Get Optical Outputs In Observer And Vector Modes: guides/get-optical-outputs-in-observer-and-vector-modes.md
+          - Get Radar Outputs In Monostatic And Bistatic Geometry: guides/get-radar-outputs-in-monostatic-and-bistatic-geometry.md
+      - Observation Preparation:
+          - Load Online Observations From MPC And JPL: guides/load-online-observations-from-mpc-and-jpl.md
+          - Load Local ADES Observations: guides/load-local-ades-observations.md
+          - Choose And Override Observation Weights: guides/choose-and-override-observation-weights.md
+          - Inspect Optical Debias Corrections: guides/inspect-optical-debias-corrections.md
+      - Orbit Determination:
+          - Solve Initial Orbit From Optical Observations: guides/solve-initial-orbit-from-optical-observations.md
+          - Configure Outlier Rejection For Orbit Determination: guides/configure-outlier-rejection-for-orbit-determination.md
+          - Run Differential Correction From An Initial Orbit: guides/run-differential-correction-from-an-initial-orbit.md
+          - Run Integrated Orbit Determination With ODSolver: guides/run-integrated-orbit-determination-with-odsolver.md
+          - Inspect Differential Correction Results: guides/inspect-differential-correction-results.md
+          - Analyze Residuals By Station And Tracklet: guides/analyze-residuals-by-station-and-tracklet.md
+          - Estimate Nongravitational Parameters In Differential Correction: guides/estimate-nongravitational-parameters-in-differential-correction.md
+          - Estimate A Comet Photocenter Offset In Differential Correction: guides/estimate-comet-photocenter-offset.md
+      - Use Batch Inputs Across DiffOrb APIs: guides/use-batch-inputs-across-difforb-apis.md
+  - Workflows:
+      - Overview: workflows/index.md
+      - Ephemeris Products Workflow: workflows/ephemeris-products-workflow.md
+      - Orbit Determination Workflow: workflows/orbit-determination-workflow.md
+  - API:
+      - Scope And Conventions: api/index.md
+      - Core: api/core.md
+      - Earth Orientation Parameters: api/eop.md
+      - State: api/state.md
+      - Time: api/time.md
+      - Body: api/body.md
+      - Observation Data: api/observation-data.md
+      - Debiasing: api/debiasing.md
+      - Weights: api/weights.md
+      - Dynamics: api/dynamics.md
+      - Integrator: api/integrator.md
+      - SPK: api/spk.md
+      - Ephemeris: api/ephemeris.md
+      - Outlier Rejection: api/outlier-rejection.md
+      - Orbit Determination: api/od.md

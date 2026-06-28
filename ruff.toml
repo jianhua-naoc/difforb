@@ -1,0 +1,8 @@
+target-version = "py311"
+extend-exclude = ["docs/_build"]
+
+[lint]
+select = ["D101", "D102", "D103", "D104"]
+
+[lint.pydocstyle]
+convention = "numpy"

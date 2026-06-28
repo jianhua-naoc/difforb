@@ -1,0 +1,9 @@
+# Material for MkDocs 9.7.6 declares `mkdocs>=1.6,<2`.
+# MkDocs 1.6.1 is pinned here as the compatible site generator version.
+# MkDocs 1.6.1 currently has a file-watching regression with `click>8.2.1`
+# under `mkdocs serve`, so pin Click to keep live reload working.
+mkdocs-material==9.7.6
+mkdocs==1.6.1
+click==8.2.1
+mkdocstrings==1.0.4
+mkdocstrings-python==2.0.3

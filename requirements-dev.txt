@@ -1,0 +1,10 @@
+# Development and test dependencies for the `difforb` Python package.
+
+-r requirements.txt
+
+pytest>=9,<10
+pytest-cov>=7,<8
+pytest-xdist>=3,<4
+build>=1.2,<2
+twine>=6,<7
+wheel>=0.45,<1

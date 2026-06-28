@@ -1,0 +1,1566 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DiffOrb Introduction</title>
+  <style>
+    :root {
+      --surface: #f7f7f2;
+      --ink: #20242a;
+      --muted: #59606a;
+      --blue: #284f7f;
+      --blue-dark: #183a61;
+      --blue-light: #e7eef7;
+      --rule: #cfd6df;
+      --accent: #9b3d28;
+      --green: #2d6a4f;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Helvetica Neue", Arial, sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #dfe3e8;
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .deck {
+      position: relative;
+      width: min(100vw, 177.7778vh);
+      height: min(100vh, 56.25vw);
+      background: var(--surface);
+      box-shadow: 0 18px 55px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      height: 100%;
+      padding: 5.25% 5.2% 4.6%;
+      background: var(--surface);
+      position: absolute;
+      inset: 0;
+    }
+
+    .slide.active {
+      display: block;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 3.9%;
+      background: var(--blue);
+    }
+
+    .frame-title {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3.9%;
+      padding: 0.42% 2.4% 0;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: clamp(9px, 0.86vw, 14px);
+      letter-spacing: 0;
+      font-weight: 600;
+    }
+
+    .frame-title span:last-child {
+      font-weight: 400;
+      opacity: 0.92;
+    }
+
+    .footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3.3%;
+      border-top: 1px solid var(--rule);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      padding: 0 2.4%;
+      color: var(--muted);
+      font-size: clamp(8px, 0.7vw, 12px);
+      background: rgba(247, 247, 242, 0.96);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: clamp(36px, 3.8vw, 64px);
+      line-height: 1.04;
+      margin-bottom: 1.6%;
+      color: var(--blue-dark);
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+
+    h2 {
+      font-size: clamp(26px, 2.35vw, 40px);
+      line-height: 1.08;
+      margin-bottom: 1.7%;
+      color: var(--blue-dark);
+      font-weight: 700;
+      letter-spacing: 0;
+      border-bottom: 2px solid var(--blue);
+      padding-bottom: 0.8%;
+    }
+
+    h3 {
+      font-size: clamp(16px, 1.25vw, 23px);
+      margin-bottom: 1%;
+      color: var(--blue-dark);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    p,
+    li,
+    td,
+    th {
+      font-size: clamp(12px, 1.03vw, 18px);
+      line-height: 1.35;
+    }
+
+    p {
+      margin-bottom: 1.1%;
+    }
+
+    ul,
+    ol {
+      margin: 0.35% 0 1.1% 1.35em;
+      padding: 0;
+    }
+
+    li {
+      margin: 0.32em 0;
+    }
+
+    strong {
+      color: var(--blue-dark);
+    }
+
+    code,
+    .mono {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.2% 0;
+      table-layout: fixed;
+    }
+
+    th {
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+      text-align: left;
+      padding: 0.42em 0.55em;
+      border: 1px solid var(--blue-dark);
+    }
+
+    td {
+      padding: 0.38em 0.55em;
+      border: 1px solid var(--rule);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background: #eef2f6;
+    }
+
+    .subtitle {
+      font-size: clamp(18px, 1.55vw, 28px);
+      line-height: 1.28;
+      color: var(--muted);
+      margin-bottom: 2.2%;
+    }
+
+    .small {
+      font-size: clamp(10px, 0.86vw, 15px);
+      line-height: 1.32;
+    }
+
+    .tiny {
+      font-size: clamp(8px, 0.66vw, 12px);
+      line-height: 1.25;
+    }
+
+    .lead {
+      font-size: clamp(15px, 1.25vw, 22px);
+      line-height: 1.38;
+      color: var(--ink);
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 2.2%;
+      align-items: start;
+    }
+
+    .columns-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.55%;
+      align-items: stretch;
+    }
+
+    .columns-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1.15%;
+      align-items: stretch;
+    }
+
+    .block {
+      border: 1px solid var(--rule);
+      background: #fff;
+      padding: 1.25% 1.45%;
+      margin-bottom: 1.2%;
+    }
+
+    .block.blue {
+      border-color: #b6c8dd;
+      background: var(--blue-light);
+    }
+
+    .block.green {
+      border-color: #a7c7b7;
+      background: #edf7f1;
+    }
+
+    .block.red {
+      border-color: #d4b7ae;
+      background: #f8efec;
+    }
+
+    .block h3 {
+      margin-bottom: 0.5em;
+    }
+
+    .statement {
+      border-left: 6px solid var(--blue);
+      background: #fff;
+      padding: 1.25% 1.65%;
+      font-size: clamp(14px, 1.16vw, 20px);
+      line-height: 1.36;
+      margin: 1% 0 1.5%;
+    }
+
+    .equation {
+      font-family: var(--mono);
+      background: #f0f3f7;
+      border: 1px solid var(--rule);
+      padding: 0.75em 1em;
+      margin: 0.8% 0 1.2%;
+      font-size: clamp(11px, 0.95vw, 16px);
+      white-space: pre-wrap;
+    }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: 1fr 0.18fr 1fr 0.18fr 1fr;
+      gap: 1.0%;
+      align-items: center;
+      margin: 1.4% 0 1.2%;
+    }
+
+    .arrow {
+      color: var(--blue-dark);
+      font-size: clamp(22px, 2.4vw, 42px);
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .stage {
+      border: 2px solid var(--blue);
+      background: #fff;
+      padding: 1.1% 1.25%;
+      min-height: 100%;
+    }
+
+    .stage h3 {
+      background: var(--blue);
+      color: #fff;
+      margin: -1.12% -1.28% 0.8em;
+      padding: 0.45em 0.65em;
+      font-size: clamp(14px, 1.04vw, 18px);
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.4em 1.0em;
+      margin: 0.4em 0;
+    }
+
+    .kv div:nth-child(odd) {
+      font-weight: 700;
+      color: var(--blue-dark);
+      white-space: nowrap;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1.0%;
+      margin: 1% 0 1.2%;
+    }
+
+    .metric {
+      background: #fff;
+      border: 1px solid var(--rule);
+      padding: 0.75em 0.85em;
+      min-height: 4.4em;
+    }
+
+    .metric .value {
+      display: block;
+      color: var(--blue-dark);
+      font-weight: 700;
+      font-size: clamp(18px, 1.7vw, 30px);
+      line-height: 1.05;
+      margin-bottom: 0.22em;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: clamp(9px, 0.78vw, 13px);
+      line-height: 1.25;
+    }
+
+    .figure-grid {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 2%;
+      align-items: center;
+    }
+
+    figure {
+      margin: 0;
+    }
+
+    figcaption {
+      margin-top: 0.45em;
+      color: var(--muted);
+      font-size: clamp(8px, 0.7vw, 12px);
+      line-height: 1.25;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+
+    .fit-img {
+      width: 100%;
+      border: 1px solid var(--rule);
+      background: #fff;
+    }
+
+    .logo {
+      width: 7.5%;
+      max-width: 92px;
+      min-width: 54px;
+      position: absolute;
+      top: 7.2%;
+      right: 5.3%;
+    }
+
+    .title-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 3%;
+      margin-top: 1.5%;
+      align-items: start;
+    }
+
+    .outline {
+      counter-reset: item;
+      margin-left: 0;
+      list-style: none;
+    }
+
+    .outline li {
+      counter-increment: item;
+      display: grid;
+      grid-template-columns: 2.1em 1fr;
+      gap: 0.6em;
+      margin: 0.45em 0;
+    }
+
+    .outline li::before {
+      content: counter(item);
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+      text-align: center;
+      padding: 0.12em 0;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.8%;
+      margin: 1.2% 0;
+    }
+
+    .step {
+      border-top: 5px solid var(--blue);
+      background: #fff;
+      border-left: 1px solid var(--rule);
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      padding: 0.75em;
+      min-height: 8em;
+    }
+
+    .step .num {
+      font-weight: 700;
+      color: var(--blue-dark);
+      font-size: clamp(18px, 1.5vw, 26px);
+      line-height: 1;
+      margin-bottom: 0.25em;
+    }
+
+    .state-table th:nth-child(1),
+    .state-table td:nth-child(1) {
+      width: 24%;
+    }
+
+    .state-table th:nth-child(2),
+    .state-table td:nth-child(2) {
+      width: 38%;
+    }
+
+    .state-table th:nth-child(3),
+    .state-table td:nth-child(3) {
+      width: 38%;
+    }
+
+    .nav {
+      position: absolute;
+      right: 1.1%;
+      bottom: 3.9%;
+      display: flex;
+      gap: 0.35em;
+      z-index: 20;
+    }
+
+    .nav button {
+      width: clamp(24px, 2.1vw, 36px);
+      height: clamp(24px, 2.1vw, 36px);
+      border: 1px solid #b7c0cb;
+      background: #fff;
+      color: var(--blue-dark);
+      font-weight: 700;
+      cursor: pointer;
+      font-size: clamp(12px, 1vw, 18px);
+      line-height: 1;
+    }
+
+    .nav button:hover {
+      background: var(--blue-light);
+    }
+
+    @media print {
+      body {
+        display: block;
+        background: #fff;
+        overflow: visible;
+      }
+
+      .deck {
+        width: auto;
+        height: auto;
+        box-shadow: none;
+        overflow: visible;
+      }
+
+      .slide,
+      .slide.active {
+        display: block;
+        position: relative;
+        width: 297mm;
+        height: 167.0625mm;
+        break-after: page;
+        page-break-after: always;
+        overflow: hidden;
+      }
+
+      .nav {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="DiffOrb HTML slide deck">
+    <section class="slide active" data-section="Title">
+      <div class="frame-title"><span>DiffOrb Introduction</span><span>Academic HTML deck</span></div>
+      <img class="logo" src="assets/brand/difforb-logo.png" alt="DiffOrb logo">
+      <h1>DiffOrb</h1>
+      <p class="subtitle">A differentiable and batchable framework for small-body orbit prediction and orbit determination</p>
+      <div class="title-grid">
+        <div>
+          <div class="statement">
+            DiffOrb combines JAX-based numerical kernels, time and frame models, observation reduction, force models,
+            numerical propagation, and orbit-determination algorithms in one consistent small-body workflow.
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span class="value">JAX</span><span class="label">automatic differentiation and vectorized execution</span></div>
+            <div class="metric"><span class="value">BCRS</span><span class="label">canonical dynamical state frame</span></div>
+            <div class="metric"><span class="value">TDB</span><span class="label">canonical state epoch scale</span></div>
+            <div class="metric"><span class="value">OD</span><span class="label">IOD, DC, weighting, debiasing, outliers</span></div>
+          </div>
+        </div>
+        <div class="block blue">
+          <h3>Talk structure</h3>
+          <ol class="outline">
+            <li>Overview and scientific scope</li>
+            <li>Technical architecture</li>
+            <li>Core algorithmic models</li>
+            <li>Ephemeris products compared with JPL Horizons</li>
+            <li>Orbit determination compared with JPL Horizons</li>
+          </ol>
+        </div>
+      </div>
+      <div class="columns-3">
+        <div class="block">
+          <h3>Canonical contracts</h3>
+          <p class="small">Dynamical states use BCRS/ICRS axes, TDB epochs, position in au, and velocity in au per day.</p>
+        </div>
+        <div class="block">
+          <h3>Computation model</h3>
+          <p class="small">Objects are batch-aware PyTrees where numerical leaves can be mapped by JAX over scalar, broadcast, or grid inputs.</p>
+        </div>
+        <div class="block">
+          <h3>Reference checks</h3>
+          <p class="small">Current workflows include milliarcsecond ephemeris checks and kilometer-scale fitted-state checks against JPL Horizons.</p>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: docs/index.md, docs/concepts, docs/workflows</span><span>1 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Overview">
+      <div class="frame-title"><span>Overview</span><span>What DiffOrb is</span></div>
+      <h2>What Is DiffOrb?</h2>
+      <div class="columns">
+        <div>
+          <p class="lead">
+            DiffOrb is a framework for small-body orbit prediction and orbit determination. Its numerical core is
+            designed around differentiable arrays, batch dispatch, and shared models between prediction and fitting.
+          </p>
+          <div class="block blue">
+            <h3>Main capability groups</h3>
+            <ul>
+              <li>Small-body state representation and frame conversion.</li>
+              <li>Time-scale conversion and split Julian-date storage.</li>
+              <li>Earth rotation and ITRS ground-site evaluation into GCRS state vectors.</li>
+              <li>SPK-backed ephemeris bodies and perturber systems.</li>
+              <li>Optical and radar measurement prediction.</li>
+              <li>Initial orbit determination and differential correction.</li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="block">
+            <h3>Design goals visible in the API</h3>
+            <ul>
+              <li><strong>Differentiable numerical core:</strong> residual Jacobians and radar Doppler can be tied to the same residual models by automatic differentiation.</li>
+              <li><strong>Parallel batch APIs:</strong> many objects accept scalar or batch inputs without separate batch entry points.</li>
+              <li><strong>Broadcast and grid evaluation:</strong> public APIs can align matching rows or evaluate target-observer-time grids.</li>
+              <li><strong>One model chain:</strong> propagated trajectories feed ephemeris products and orbit determination.</li>
+            </ul>
+          </div>
+          <div class="block green">
+            <h3>Observation coverage</h3>
+            <ul>
+              <li>Ground optical observations.</li>
+              <li>Space-based optical observations.</li>
+              <li>Radar delay observations.</li>
+              <li>Radar Doppler observations.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/index.md</span><span>2 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Overview">
+      <div class="frame-title"><span>Overview</span><span>Scientific workflow</span></div>
+      <h2>Scientific Scope And Workflow</h2>
+      <div class="diagram">
+        <div class="stage">
+          <h3>Data and epochs</h3>
+          <ul>
+            <li>Observation records from MPC, ADES, and JPL radar sources.</li>
+            <li>Planetary and small-body SPK kernels.</li>
+            <li>Earth Orientation Parameters (EOP).</li>
+            <li>Initial states or orbital elements.</li>
+          </ul>
+        </div>
+        <div class="arrow">-&gt;</div>
+        <div class="stage">
+          <h3>Physical model</h3>
+          <ul>
+            <li>State vectors with frame and epoch contracts.</li>
+            <li>Ground and space observer geometry.</li>
+            <li>Force models and numerical integration.</li>
+            <li>Optical and radar reduction equations.</li>
+          </ul>
+        </div>
+        <div class="arrow">-&gt;</div>
+        <div class="stage">
+          <h3>Scientific products</h3>
+          <ul>
+            <li>Optical tables.</li>
+            <li>Vector and radar tables.</li>
+            <li>Elements, apsides, close approaches.</li>
+            <li>Fitted orbit, residuals, covariance, diagnostics.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="columns">
+        <div class="block blue">
+          <h3>Prediction mode</h3>
+          <p>
+            Start from a fixed orbit, propagate once, and reuse the dense trajectory to generate optical, radar, vector,
+            element, and event products.
+          </p>
+        </div>
+        <div class="block green">
+          <h3>Orbit-determination mode</h3>
+          <p>
+            Load observations, apply debiasing and weights, build an initial orbit, run differential correction, update
+            the outlier mask, and inspect station-level residual diagnostics.
+          </p>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: docs/index.md, docs/workflows/index.md</span><span>3 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Architecture">
+      <div class="frame-title"><span>Technical Architecture</span><span>Input, model, output layers</span></div>
+      <h2>Layered Architecture</h2>
+      <div class="diagram">
+        <div class="stage">
+          <h3>Input layer</h3>
+          <ul>
+            <li><span class="mono">Time</span>, UTC, TT, UT1, TDB, split JD.</li>
+            <li>SPK kernels: planets, Moon, selected asteroid perturbers.</li>
+            <li>Observation bundles: optical and radar, with observer type metadata.</li>
+            <li>Site definitions: MPC observatory codes, JPL radar sites, roving/space records.</li>
+            <li>Initial BCRS states or element-derived states.</li>
+          </ul>
+        </div>
+        <div class="arrow">-&gt;</div>
+        <div class="stage">
+          <h3>Model and algorithm layer</h3>
+          <ul>
+            <li>Time and frame conversion contracts.</li>
+            <li>CIO-based Earth rotation: ITRS to GCRS.</li>
+            <li><span class="mono">DynamicSystem</span>, <span class="mono">ForceModel</span>, <span class="mono">NumericalIntegrator</span>.</li>
+            <li>Optical one-way and radar two-way reduction.</li>
+            <li>VFCC17/ADES/manual weights, Eggl debiasing.</li>
+            <li>Double-r IOD, damped LM differential correction, outlier masks.</li>
+          </ul>
+        </div>
+        <div class="arrow">-&gt;</div>
+        <div class="stage">
+          <h3>Output layer</h3>
+          <ul>
+            <li>Propagated <span class="mono">SmallBody</span> with dense trajectory.</li>
+            <li>Optical, vector, radar, element, and event tables.</li>
+            <li><span class="mono">DCResult</span> with orbit, residual blocks, covariance status, convergence fields.</li>
+            <li>Analyzer tables by observation row, station, and tracklet.</li>
+            <li>Reference comparisons with JPL Horizons.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="block red">
+        <h3>Architectural invariant</h3>
+        <p>
+          The same propagated trajectory and measurement models are used for prediction products and residual
+          construction. This keeps validation against Horizons, orbit fitting, and diagnostics on the same physical
+          model path.
+        </p>
+      </div>
+      <div class="columns-3">
+        <div class="block">
+          <h3>External data boundary</h3>
+          <p class="small">SPK kernels, EOP tables, observatory-code lists, MPC/ADES records, and JPL radar data are explicit inputs.</p>
+        </div>
+        <div class="block">
+          <h3>Numerical boundary</h3>
+          <p class="small">Force-model and measurement equations operate on documented units and frames rather than hidden display labels.</p>
+        </div>
+        <div class="block">
+          <h3>Diagnostic boundary</h3>
+          <p class="small">Fit quality is read through residual blocks, station statistics, covariance status, and outlier masks.</p>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: docs/index.md, docs/concepts/index.md</span><span>4 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Architecture">
+      <div class="frame-title"><span>Technical Architecture</span><span>Subsystem map</span></div>
+      <h2>Subsystem Map</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Subsystem</th>
+            <th>Representative modules</th>
+            <th>Role in the scientific pipeline</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Core time and state</td>
+            <td><span class="mono">core/time</span>, <span class="mono">core/state</span>, <span class="mono">core/element</span></td>
+            <td>Store epochs, Cartesian states, elements, frames, and canonical units.</td>
+          </tr>
+          <tr>
+            <td>Earth rotation and sites</td>
+            <td><span class="mono">core/earth_rotation</span>, <span class="mono">core/eop</span>, <span class="mono">body/site</span></td>
+            <td>Evaluate ITRS observatory sites as GCRS observer state vectors.</td>
+          </tr>
+          <tr>
+            <td>Ephemeris access</td>
+            <td><span class="mono">spk</span>, <span class="mono">body/ephbody</span>, <span class="mono">ephemeris</span></td>
+            <td>Query major bodies and generate small-body prediction products.</td>
+          </tr>
+          <tr>
+            <td>Dynamics and integration</td>
+            <td><span class="mono">dynamics</span>, <span class="mono">integrator</span></td>
+            <td>Define acceleration laws and integrate BCRS/TDB states with dense output.</td>
+          </tr>
+          <tr>
+            <td>Astrometry</td>
+            <td><span class="mono">astrometry</span>, <span class="mono">astrometry/io</span>, <span class="mono">astrometry/reduction</span></td>
+            <td>Load observations, debias optical measurements, and predict observables.</td>
+          </tr>
+          <tr>
+            <td>Orbit determination</td>
+            <td><span class="mono">od/iod</span>, <span class="mono">od/dc</span>, <span class="mono">od/outlier</span></td>
+            <td>Seed an orbit, refine it with weighted least squares, and update inlier masks.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="columns">
+        <div class="block blue">
+          <h3>JAX surface</h3>
+          <p>Numerical fields are arrays; many objects are PyTrees; batch dispatch uses JAX mapping over data leaves.</p>
+        </div>
+        <div class="block green">
+          <h3>Scientific surface</h3>
+          <p>Public objects retain physical labels: epoch, frame, position, velocity, observer site, observation type, and residual block.</p>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: repository guidelines, docs/concepts/batch-inputs-and-shapes.md</span><span>5 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>State and batch contract</span></div>
+      <h2>State Representation And Batch Semantics</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>Canonical state contract</h3>
+            <ul>
+              <li>A <span class="mono">State</span> is a position and velocity at one epoch in one reference frame.</li>
+              <li>The epoch is stored as a TDB view for dynamical states.</li>
+              <li>Position is in <span class="mono">au</span>; velocity is in <span class="mono">au / day</span>.</li>
+              <li>The stacked six-vector order is <span class="mono">[x, y, z, vx, vy, vz]</span>.</li>
+              <li>The frame label is part of the state, not external metadata.</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>Supported state frames</h3>
+            <ul>
+              <li><span class="mono">BCRS</span>: solar-system barycenter, ICRS axes.</li>
+              <li><span class="mono">GCRS</span>: Earth center, ICRS axes.</li>
+              <li><span class="mono">HELIO_ICRS</span>: Sun center, ICRS axes.</li>
+              <li><span class="mono">HELIO_J2000</span> and <span class="mono">HELIO_ECLIP_J2000</span>: heliocentric J2000 variants.</li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Batch contract</h3>
+            <ul>
+              <li>The same interface handles scalar and batch inputs.</li>
+              <li>Numerical fields and object leaves carry batch dimensions.</li>
+              <li>Vector component axes are not counted as batch shape.</li>
+              <li>Point-wise broadcasting aligns compatible rows.</li>
+              <li>Cartesian-product grids evaluate all target, observer, and time combinations.</li>
+            </ul>
+          </div>
+          <table class="state-table">
+            <thead>
+              <tr><th>Object data</th><th>Array shape</th><th>Object shape</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>One epoch</td><td><span class="mono">()</span></td><td><span class="mono">()</span></td></tr>
+              <tr><td>N epochs</td><td><span class="mono">(N,)</span></td><td><span class="mono">(N,)</span></td></tr>
+              <tr><td>One state</td><td><span class="mono">pos.shape == (3,)</span></td><td><span class="mono">()</span></td></tr>
+              <tr><td>N states</td><td><span class="mono">pos.shape == (N, 3)</span></td><td><span class="mono">(N,)</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: docs/concepts/frames-and-state-representation.md, docs/concepts/batch-inputs-and-shapes.md</span><span>6 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Time scales</span></div>
+      <h2>Time Scales And Epoch Storage</h2>
+      <div class="columns">
+        <div>
+          <div class="statement">
+            DiffOrb represents one physical instant through several time-scale views. The <span class="mono">Time</span>
+            container stores TT canonically, while dynamical <span class="mono">State</span> epochs use TDB.
+          </div>
+          <table>
+            <thead>
+              <tr><th>Scale</th><th>Role in DiffOrb</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>TT</td><td>Canonical storage scale of <span class="mono">Time</span>; bridge to UTC, UT1, and TDB.</td></tr>
+              <tr><td>TAI</td><td>Continuous atomic intermediate; <span class="mono">TT = TAI + 32.184 s</span>.</td></tr>
+              <tr><td>UTC</td><td>Civil observation scale, defined in DiffOrb on or after 1962-01-01.</td></tr>
+              <tr><td>UT1</td><td>Earth-rotation scale used by terrestrial geometry.</td></tr>
+              <tr><td>TDB</td><td>Barycentric dynamical scale for states and ephemeris arguments.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="block blue">
+            <h3>Precision rule</h3>
+            <p>
+              Epochs are stored as split Julian dates: <span class="mono">jd = jd1 + jd2</span>. Keeping the large part
+              and small remainder separate reduces precision loss when small corrections are applied to large Julian dates.
+            </p>
+          </div>
+          <div class="block green">
+            <h3>UT convention</h3>
+            <p>
+              DiffOrb exposes a mixed <span class="mono">UT</span> convention: UT1 before 1962-01-01 and UTC on or after
+              1962-01-01. This matches the documented JPL Horizons observer-table convention.
+            </p>
+          </div>
+          <div class="block">
+            <h3>Operational dependency</h3>
+            <p>
+              Modern UT1 conversion uses EOP data; outside available EOP spans DiffOrb can fall back to a historical
+              Delta T polynomial model.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/concepts/time-scales-and-epoch-storage.md</span><span>7 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Earth rotation and sites</span></div>
+      <h2>Earth Rotation, Frames, And Observer Sites</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>ITRS to GCRS transformation</h3>
+            <ul>
+              <li>Ground-site positions are stored in ITRS.</li>
+              <li>Observation reduction needs observer state vectors in GCRS or ICRS-aligned frames.</li>
+              <li>DiffOrb follows the modern CIO-based IAU transformation path.</li>
+              <li>The model depends on TT, UT1, and EOP corrections.</li>
+            </ul>
+          </div>
+          <figure>
+            <img class="fit-img" src="assets/concepts/earth-rotation-model-paths.svg" alt="ITRS to GCRS transformation paths">
+            <figcaption>Two equivalent ITRS to GCRS transformation paths used in the Concepts documentation.</figcaption>
+          </figure>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>CIO-based operational path</h3>
+            <ul>
+              <li>Polar motion: ITRS to TIRS.</li>
+              <li>Earth Rotation Angle: TIRS to CIRS, linear in UT1.</li>
+              <li>CIP/CIO celestial orientation: CIRS to GCRS.</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>Short- and long-term models</h3>
+            <ul>
+              <li>From 1799-01-01 through 2202-01-01: IAU 2006/2000A short-term model.</li>
+              <li>Outside that interval: Vondrak, Capitaine, and Wallace long-term precession model.</li>
+            </ul>
+          </div>
+          <div class="block red">
+            <h3>Site rows</h3>
+            <ul>
+              <li><span class="mono">Site</span> ground rows: fixed or roving Earth observers, stored in ITRS and converted through Earth rotation.</li>
+              <li><span class="mono">Site</span> space rows: observer state stored directly in GCRS.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Sources: docs/concepts/earth-rotation-and-terrestrial-geometry.md, observer-site-classes-and-observer-types.md</span><span>8 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Dynamics and integration</span></div>
+      <h2>Force Models And Numerical Propagation</h2>
+      <div class="columns">
+        <div>
+          <div class="statement">
+            Propagation integrates a canonical BCRS Cartesian state as a function of TDB. Position is in
+            <span class="mono">au</span>, velocity in <span class="mono">au / day</span>, and acceleration in
+            <span class="mono">au / day^2</span>.
+          </div>
+          <div class="block blue">
+            <h3>Gravitational terms</h3>
+            <ul>
+              <li>Newtonian point-mass gravity.</li>
+              <li>Point-mass parameterized post-Newtonian (PPN) correction.</li>
+              <li>Optional second zonal harmonic (J2) term.</li>
+              <li>Selected large asteroids can be included through an extended system.</li>
+            </ul>
+          </div>
+          <div class="equation">a_total = a_Newtonian + a_PPN + a_J2 + a_non_grav</div>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Non-gravitational empirical terms</h3>
+            <p>Built-in terms share a heliocentric RTN form:</p>
+            <div class="equation">a_ng = g(r) * (A1 r_hat + A2 t_hat + A3 n_hat)
+g(r) = alpha * (r/r0)^(-m) * (1 + (r/r0)^n)^(-k)</div>
+            <ul>
+              <li>Symmetric Marsden-style comet outgassing.</li>
+              <li>Empirical transverse Yarkovsky-like term.</li>
+              <li>Empirical radial solar-radiation-pressure-like term.</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>Integrator contract</h3>
+            <ul>
+              <li>Exposed methods include <span class="mono">DOPRI5</span>, <span class="mono">DOPRI8</span>, and <span class="mono">IAS15</span>.</li>
+              <li>Dense output supports many state evaluations inside one integration interval.</li>
+              <li>Light-time correction and ephemeris generation query the dense trajectory instead of reintegrating.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/concepts/dynamical-models.md</span><span>9 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Optical reduction</span></div>
+      <h2>Optical Astrometry Reduction</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>One-way light-time problem</h3>
+            <ul>
+              <li>The observation epoch belongs to the observer.</li>
+              <li>The modeled quantity is the direction from observer to target.</li>
+              <li>The target is evaluated at the emission epoch after solving one-way light time.</li>
+              <li>Astrometric RA/Dec are angular coordinates of that solved direction in ICRS.</li>
+            </ul>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Place</th><th>Model content</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Geometric</td><td>Observer and target both evaluated at the observation epoch.</td></tr>
+              <tr><td>Astrometric</td><td>Target moved to emission epoch; one-way light time and Sun Shapiro delay.</td></tr>
+              <tr><td>Apparent</td><td>Astrometric direction plus light deflection, stellar aberration, and of-date rotation.</td></tr>
+              <tr><td>Observed</td><td>Ground apparent direction optionally corrected for atmospheric refraction.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Vector mode</h3>
+            <ul>
+              <li>Provides geometric, astrometric, and apparent relative vectors.</li>
+              <li>Vectors remain in fixed BCRS axes aligned with ICRS.</li>
+              <li>Useful when downstream work needs relative states rather than sky angles.</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>Observer mode</h3>
+            <ul>
+              <li>Produces astrometric and apparent RA/Dec.</li>
+              <li>For ground observers, also produces topocentric azimuth and elevation.</li>
+              <li>Auxiliary geometry includes <span class="mono">delta</span>, <span class="mono">r</span>, phase angle, elongation, and modeled magnitude.</li>
+            </ul>
+          </div>
+          <div class="block red">
+            <h3>Horizons comparison note</h3>
+            <p>
+              Earth-based apparent RA/Dec can differ from Horizons default apparent coordinates because Horizons
+              documents a legacy IAU 76/80 true-of-date convention, while DiffOrb uses the modern IAU 2006/2000A
+              of-date model.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/concepts/optical-astrometry-reduction.md</span><span>10 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Radar reduction</span></div>
+      <h2>Radar Delay And Doppler Reduction</h2>
+      <div class="figure-grid">
+        <div>
+          <figure>
+            <img class="fit-img" src="assets/concepts/radar-light-time-geometry.svg" alt="Radar two-way light-time geometry">
+            <figcaption>Two-way radar light-time geometry; the receive epoch is the reference epoch.</figcaption>
+          </figure>
+        </div>
+        <div>
+          <div class="block blue">
+            <h3>Receive-epoch model</h3>
+            <ol>
+              <li>Compute receiver state at echo reception.</li>
+              <li>Solve the down leg from target to receiver.</li>
+              <li>Solve the up leg from transmitter to target.</li>
+              <li>Combine the two legs into delay and Doppler predictions.</li>
+            </ol>
+          </div>
+          <div class="block green">
+            <h3>Observable contract</h3>
+            <ul>
+              <li>Delay: round-trip signal light time.</li>
+              <li>Range: round-trip light-travel distance corresponding to delay.</li>
+              <li>Doppler: derivative of the same converged delay model with respect to receive epoch.</li>
+              <li>Rate: derivative of round-trip light-travel distance.</li>
+            </ul>
+          </div>
+          <div class="block red">
+            <h3>Model boundary</h3>
+            <p>
+              The current theoretical radar model is point-target center-of-mass geometry. It does not model surface
+              bounce points, finite-radius targets, shape-dependent scattering, or delay-Doppler image formation.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="columns-3">
+        <div class="block">
+          <h3>Delay corrections</h3>
+          <p class="small">One-way legs can include Shapiro delay, tropospheric delay near Earth stations, and solar-corona delay.</p>
+        </div>
+        <div class="block">
+          <h3>Station geometry</h3>
+          <p class="small">The same formulation covers monostatic and bistatic radar by allowing transmitter and receiver sites to differ.</p>
+        </div>
+        <div class="block">
+          <h3>Differentiation link</h3>
+          <p class="small">Doppler is obtained by differentiating the converged two-way delay model, keeping both observables tied together.</p>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/concepts/radar-delay-and-doppler-reduction.md</span><span>11 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Weights, debiasing, outliers</span></div>
+      <h2>Weights, Debiasing, And Outlier Rejection</h2>
+      <div class="columns-3">
+        <div class="block blue">
+          <h3>Debiasing</h3>
+          <ul>
+            <li>Changes optical measurements before residuals are computed.</li>
+            <li>Corrects known star-catalog systematic offsets.</li>
+            <li>DiffOrb uses the Eggl et al. Gaia-era debias model.</li>
+            <li>Inputs include epoch, catalog code, and sky position.</li>
+          </ul>
+        </div>
+        <div class="block green">
+          <h3>Weighting</h3>
+          <ul>
+            <li>Does not change the measurement.</li>
+            <li>Sets inverse-variance weights: <span class="mono">w = 1 / sigma^2</span>.</li>
+            <li>Radar weights use reported uncertainties.</li>
+            <li>Optical weights can use VFCC17, ADES reported uncertainties, or manual overrides.</li>
+          </ul>
+        </div>
+        <div class="block red">
+          <h3>Outlier rejection</h3>
+          <ul>
+            <li>Outer loop around differential correction.</li>
+            <li>Runs only after a converged inner fit.</li>
+            <li>Uses a chi-square metric based on post-fit residual covariance.</li>
+            <li>Manual masks take precedence over automatic updates.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="timeline">
+        <div class="step"><div class="num">1</div><p class="small">Load observations and site metadata.</p></div>
+        <div class="step"><div class="num">2</div><p class="small">Apply catalog debias corrections to optical angles.</p></div>
+        <div class="step"><div class="num">3</div><p class="small">Assign weights from statistical, reported, or manual sources.</p></div>
+        <div class="step"><div class="num">4</div><p class="small">Fit the orbit with weighted residuals.</p></div>
+        <div class="step"><div class="num">5</div><p class="small">Update inlier masks and repeat if the mask changes.</p></div>
+      </div>
+      <div class="statement">
+        Weight scale diagnostics are interpreted through normalized residual spread. Values near one indicate that the
+        adopted uncertainty is broadly consistent with the fitted residual scatter.
+      </div>
+      <div class="footer"><span>Sources: docs/concepts/weighting-and-debiasing-models.md, outlier-rejection.md</span><span>12 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Core Models">
+      <div class="frame-title"><span>Core Algorithmic Models</span><span>Orbit determination</span></div>
+      <h2>Initial Orbit Determination And Differential Correction</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>Initial orbit determination (IOD)</h3>
+            <ul>
+              <li>Provides a starting orbit, not the final fit.</li>
+              <li>Currently uses optical observations only.</li>
+              <li>Builds a short optical arc and samples candidate triplets.</li>
+              <li>Solves each triplet with the Double-r method.</li>
+              <li>Ranks candidates by angular residuals before differential correction.</li>
+            </ul>
+          </div>
+          <div class="equation">unknowns in Double-r: topocentric ranges at t1 and t3
+measured data: three line-of-sight directions at t1, t2, t3</div>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Differential correction (DC)</h3>
+            <ul>
+              <li>Predicts observations from the current orbit.</li>
+              <li>Forms weighted residuals against measured data.</li>
+              <li>Builds the residual Jacobian with JAX automatic differentiation.</li>
+              <li>Uses a damped Levenberg-Marquardt least-squares method.</li>
+              <li>Can fit Cartesian state components and exposed force-model parameters.</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>Returned diagnostics</h3>
+            <ul>
+              <li>Final estimate and orbit state.</li>
+              <li>Normalized Residual RMS and residual blocks.</li>
+              <li>Convergence reason and accepted iteration counts.</li>
+              <li>Posterior covariance, rank, condition, and validity status.</li>
+              <li>Outlier iteration counters and masks.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/concepts/differential-correction.md</span><span>13 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Results">
+      <div class="frame-title"><span>Ephemeris Products Workflow</span><span>Setup and product family</span></div>
+      <h2>Ephemeris Products Workflow: One Propagated Body</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>Scenario</h3>
+            <ul>
+              <li>Target: <span class="mono">85472 Xizezong</span>.</li>
+              <li>Initial state: BCRS state from JPL Horizons at <span class="mono">2461000.5 TDB</span>, labeled <span class="mono">2025-Nov-21.0</span>.</li>
+              <li>Planetary kernel: <span class="mono">DE441</span>.</li>
+              <li>Small-body perturber kernel: <span class="mono">SB441-N16</span>.</li>
+              <li>Force model: extended system with selected perturbing bodies.</li>
+              <li>Integrator: <span class="mono">IAS15</span> with <span class="mono">tol=1e-12</span>.</li>
+            </ul>
+          </div>
+          <div class="block green">
+            <h3>Core idea</h3>
+            <p>
+              Propagate once, then use the same stored dense trajectory for all prediction products and the Horizons
+              comparison.
+            </p>
+          </div>
+        </div>
+        <div>
+          <table>
+            <thead>
+              <tr><th>Product</th><th>Representative output</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Optical table</td><td>Astrometric RA/Dec, range, elongation, phase angle.</td></tr>
+              <tr><td>Vector table</td><td>Geometric, astrometric, and apparent relative vectors.</td></tr>
+              <tr><td>Radar table</td><td>Delay, range, Doppler, and range rate.</td></tr>
+              <tr><td>Element table</td><td>Osculating heliocentric ecliptic elements.</td></tr>
+              <tr><td>Event search</td><td>Apsides and close approaches.</td></tr>
+              <tr><td>Validation table</td><td>Daily astrometric separation against JPL Horizons.</td></tr>
+            </tbody>
+          </table>
+          <div class="metric-grid">
+            <div class="metric"><span class="value">3650</span><span class="label">daily epochs in Horizons comparison</span></div>
+            <div class="metric"><span class="value">327</span><span class="label">Xinglong Station observer code</span></div>
+            <div class="metric"><span class="value">253</span><span class="label">DSS-14 radar site code</span></div>
+            <div class="metric"><span class="value">10 yr</span><span class="label">prediction interval scale</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/workflows/ephemeris-products-workflow.md</span><span>14 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Results">
+      <div class="frame-title"><span>Ephemeris Products Workflow</span><span>DiffOrb versus JPL Horizons</span></div>
+      <h2>Ephemeris Products: Optical Comparison With JPL Horizons</h2>
+      <div class="figure-grid">
+        <div>
+          <figure>
+            <img class="fit-img" src="assets/85472-xizezong-optical-vs-horizons.png" alt="Astrometric separation between DiffOrb and JPL Horizons for 85472 Xizezong">
+            <figcaption>Astrometric separation between DiffOrb and JPL Horizons for 85472 Xizezong.</figcaption>
+          </figure>
+        </div>
+        <div>
+          <div class="block blue">
+            <h3>Comparison configuration</h3>
+            <ul>
+              <li>Target: <span class="mono">85472</span>.</li>
+              <li>Observer: <span class="mono">327</span>.</li>
+              <li>Time grid: daily UTC epochs from <span class="mono">2025-11-22</span>.</li>
+              <li>Quantity: astrometric RA/Dec in ICRS.</li>
+              <li>Metric: angular separation in milliarcseconds.</li>
+            </ul>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span class="value">3650</span><span class="label">comparison epochs</span></div>
+            <div class="metric"><span class="value">0.00023</span><span class="label">minimum separation [mas]</span></div>
+            <div class="metric"><span class="value">0.031</span><span class="label">median separation [mas]</span></div>
+            <div class="metric"><span class="value">0.269</span><span class="label">maximum separation [mas]</span></div>
+          </div>
+          <div class="block green">
+            <h3>Interpretation</h3>
+            <p>
+              The comparison stays below 0.3 mas over the full daily grid in the documented run. The result used
+              DE441 and SB441-N16; small differences can appear across platforms, JAX/XLA versions, dependency versions,
+              and Horizons service revisions.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/workflows/ephemeris-products-workflow.md</span><span>15 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Results">
+      <div class="frame-title"><span>Orbit Determination Workflow</span><span>Input data and policies</span></div>
+      <h2>Orbit Determination Workflow: 2025 BC10</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>Observation data</h3>
+            <div class="kv">
+              <div>Name</div><div><span class="mono">2025 BC10</span></div>
+              <div>Total observations</div><div><span class="mono">807</span></div>
+              <div>Ground optical</div><div><span class="mono">799</span></div>
+              <div>Space optical</div><div><span class="mono">0</span></div>
+              <div>Radar</div><div><span class="mono">8</span></div>
+              <div>Observation arc</div><div><span class="mono">2025-01-28 13:31:33.500</span> to <span class="mono">2025-04-06 06:39:50.960</span> UT</div>
+            </div>
+          </div>
+          <div class="block">
+            <h3>Dynamical setup</h3>
+            <ul>
+              <li>Planetary kernel: local <span class="mono">de441.bsp</span>.</li>
+              <li>Asteroid perturber kernel: local <span class="mono">sb441-n16.bsp</span>.</li>
+              <li>Force model: <span class="mono">DynamicSystem.from_extended_system()</span>.</li>
+              <li>Integrator: <span class="mono">IAS15</span>, <span class="mono">tol=1e-12</span>.</li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Solver strategy</h3>
+            <ul>
+              <li><span class="mono">IODSolver(max_iter=20, tol=1e-8)</span>.</li>
+              <li>IOD arc: 1 day, up to 5 candidates.</li>
+              <li><span class="mono">DCSolver()</span> for differential correction.</li>
+              <li>DC stage: one 365-day arc, so the short observation arc is fit directly.</li>
+            </ul>
+          </div>
+          <div class="block red">
+            <h3>Policies</h3>
+            <ul>
+              <li>Default optical weights: <span class="mono">VFCC17WeightPolicy()</span>.</li>
+              <li>Available override: <span class="mono">ADESWeightPolicy()</span>.</li>
+              <li>Debiasing: <span class="mono">EgglDebiasPolicy()</span>.</li>
+              <li>Outlier policy: chi-square rejection threshold 5.0, recovery threshold 4.0, up to 10 passes.</li>
+            </ul>
+          </div>
+          <div class="statement small">
+            This workflow fits the orbit, inspects station residual spreads, changes selected station weights, and
+            reruns the same solve path.
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/workflows/orbit-determination-workflow.md</span><span>16 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Results">
+      <div class="frame-title"><span>Orbit Determination Workflow</span><span>Weight diagnostics and final solve</span></div>
+      <h2>Weight Diagnostics And Final OD Result</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>First solve</h3>
+            <div class="metric-grid">
+              <div class="metric"><span class="value">0.327375</span><span class="label">normalized residual RMS</span></div>
+              <div class="metric"><span class="value">791 / 799</span><span class="label">optical inliers</span></div>
+              <div class="metric"><span class="value">W74</span><span class="label">22 observations, low residual spread</span></div>
+              <div class="metric"><span class="value">G40</span><span class="label">6 observations, low residual spread</span></div>
+            </div>
+            <p class="small">
+              Low station normalized residual spreads indicated that default VFCC17 uncertainties were too conservative
+              for W74 and G40 in this run.
+            </p>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Station</th><th>Before override</th><th>After ADES override</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>G40</td><td>spread 0.0543; 6/6 inliers</td><td>spread 0.4757; 6/6 inliers</td></tr>
+              <tr><td>W74</td><td>spread 0.0488; 22/22 inliers</td><td>spread 0.8404; 16/22 inliers</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="block green">
+            <h3>Second solve after weight override</h3>
+            <div class="metric-grid">
+              <div class="metric"><span class="value">28</span><span class="label">rows switched to ADES weights</span></div>
+              <div class="metric"><span class="value">0.349697</span><span class="label">normalized residual RMS</span></div>
+              <div class="metric"><span class="value">784 / 799</span><span class="label">optical inliers</span></div>
+              <div class="metric"><span class="value">2460762.5</span><span class="label">final epoch TDB JD</span></div>
+            </div>
+          </div>
+          <div class="block">
+            <h3>Final BCRS Cartesian state</h3>
+            <div class="equation">X  = -1.108504393301865E+00 au
+Y  = -1.355488139235681E-01 au
+Z  = -3.950206095552053E-02 au
+VX =  1.471064138681666E-02 au / d
+VY = -1.150860884188372E-02 au / d
+VZ = -6.603141046723767E-03 au / d</div>
+          </div>
+          <p class="small">
+            The stricter ADES uncertainties moved the station spreads closer to one and rejected more W74 observations,
+            as expected from a tighter chi-square test.
+          </p>
+        </div>
+      </div>
+      <div class="footer"><span>Source: docs/workflows/orbit-determination-workflow.md</span><span>17 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Results">
+      <div class="frame-title"><span>Orbit Determination Workflow</span><span>DiffOrb versus JPL Horizons</span></div>
+      <h2>Orbit Determination: State Comparison With JPL Horizons</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>Comparison basis</h3>
+            <ul>
+              <li>Same epoch: <span class="mono">2460762.500000000 TDB JD</span>.</li>
+              <li>Same BCRS/ICRF Cartesian state convention.</li>
+              <li>DiffOrb state from the second OD run after station weight override.</li>
+              <li>Reference state from JPL Horizons.</li>
+            </ul>
+          </div>
+          <div class="equation">DiffOrb - Horizons:
+dX  = -2.043218927383350E-09 au
+dY  = -7.414449887388486E-10 au
+dZ  = -6.663472759682598E-10 au
+dVX =  5.055251495189594E-10 au / d
+dVY = -5.707392111004017E-10 au / d
+dVZ =  1.141870140108914E-09 au / d</div>
+        </div>
+        <div>
+          <div class="metric-grid">
+            <div class="metric"><span class="value">2.27e-9</span><span class="label">position norm difference [au]</span></div>
+            <div class="metric"><span class="value">0.340</span><span class="label">position norm difference [km]</span></div>
+            <div class="metric"><span class="value">1.37e-9</span><span class="label">velocity norm difference [au / d]</span></div>
+            <div class="metric"><span class="value">0.0024</span><span class="label">velocity norm difference [m / s]</span></div>
+          </div>
+          <div class="block green">
+            <h3>Scientific reading</h3>
+            <p>
+              The Horizons state comparison is an external ephemeris check on the final fitted state. It supports the
+              consistency of the model chain, but it does not replace residual inspection, covariance health checks,
+              station diagnostics, or sensitivity to data and force-model choices.
+            </p>
+          </div>
+          <div class="block red">
+            <h3>Change sensitivity</h3>
+            <p>
+              The result can change if online observations are updated, kernels are changed, force-model settings are
+              changed, or Horizons updates the orbit solution.
+            </p>
+          </div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Check</th><th>DiffOrb result</th><th>Horizons comparison</th><th>Interpretation boundary</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Position norm</td>
+            <td><span class="mono">|dR| = 2.273434175148654E-09 au</span></td>
+            <td>About <span class="mono">0.340 km</span></td>
+            <td>External state agreement at one epoch.</td>
+          </tr>
+          <tr>
+            <td>Velocity norm</td>
+            <td><span class="mono">|dV| = 1.373013598168651E-09 au / d</span></td>
+            <td>About <span class="mono">0.0024 m / s</span></td>
+            <td>Does not replace covariance or residual diagnostics.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer"><span>Source: docs/workflows/orbit-determination-workflow.md</span><span>18 / 19</span></div>
+    </section>
+
+    <section class="slide" data-section="Summary">
+      <div class="frame-title"><span>Summary</span><span>Takeaways</span></div>
+      <h2>Summary</h2>
+      <div class="columns">
+        <div>
+          <div class="block blue">
+            <h3>What DiffOrb provides</h3>
+            <ul>
+              <li>A coherent BCRS/TDB state and propagation contract for small bodies.</li>
+              <li>Public time, frame, Earth-rotation, site, ephemeris, and batch APIs.</li>
+              <li>Shared optical and radar measurement models for products and fitting.</li>
+              <li>JAX automatic differentiation for residual Jacobians and derivative-linked radar Doppler.</li>
+              <li>High-level workflows from observations to fitted orbit and prediction products.</li>
+            </ul>
+          </div>
+          <div class="block green">
+            <h3>Validation evidence in current docs</h3>
+            <ul>
+              <li>85472 Xizezong optical ephemeris comparison stays below 0.3 mas against Horizons over 3650 daily epochs.</li>
+              <li>2025 BC10 fitted BCRS state differs from Horizons by about 0.340 km and 0.0024 m/s in the documented run.</li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="block">
+            <h3>Important model boundaries</h3>
+            <ul>
+              <li>Canonical runtime field names remain physical and unit-free; units are part of the documented contract.</li>
+              <li>Optical apparent RA/Dec comparison must account for apparent-place convention differences.</li>
+              <li>Radar reduction is currently a point-target center-of-mass model, not a shape or scattering model.</li>
+              <li>Orbit-determination quality requires residual, covariance, station, and outlier diagnostics, not only RMS.</li>
+              <li>Online services and kernel choices can change reference numerical outputs.</li>
+            </ul>
+          </div>
+          <div class="statement">
+            The main architectural point is that DiffOrb treats prediction and orbit determination as two uses of the
+            same differentiable model chain, rather than as separate code paths with separate physical assumptions.
+          </div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Documentation section</th><th>Role in this deck</th><th>Primary evidence used here</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mono">docs/index.md</span></td><td>Project overview</td><td>Feature set, batchability, supported observations, public APIs.</td></tr>
+          <tr><td><span class="mono">docs/concepts</span></td><td>Algorithmic model layer</td><td>Time, frames, Earth rotation, propagation, reduction, OD, and outlier contracts.</td></tr>
+          <tr><td><span class="mono">docs/workflows</span></td><td>Reference workflows</td><td>Ephemeris and orbit-determination comparisons against JPL Horizons.</td></tr>
+        </tbody>
+      </table>
+      <div class="footer"><span>Sources: docs/index.md, docs/concepts, docs/workflows</span><span>19 / 19</span></div>
+    </section>
+
+    <div class="nav" aria-hidden="true">
+      <button type="button" id="prevBtn" title="Previous slide">&lt;</button>
+      <button type="button" id="nextBtn" title="Next slide">&gt;</button>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const prev = document.getElementById("prevBtn");
+      const next = document.getElementById("nextBtn");
+      let index = 0;
+
+      function show(i) {
+        index = Math.max(0, Math.min(slides.length - 1, i));
+        slides.forEach((slide, slideIndex) => {
+          slide.classList.toggle("active", slideIndex === index);
+        });
+        window.location.hash = String(index + 1);
+      }
+
+      function fromHash() {
+        const n = Number(window.location.hash.replace("#", ""));
+        if (Number.isFinite(n) && n >= 1 && n <= slides.length) {
+          show(n - 1);
+        }
+      }
+
+      prev.addEventListener("click", () => show(index - 1));
+      next.addEventListener("click", () => show(index + 1));
+      window.addEventListener("hashchange", fromHash);
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+          event.preventDefault();
+          show(index + 1);
+        }
+        if (event.key === "ArrowLeft" || event.key === "PageUp" || event.key === "Backspace") {
+          event.preventDefault();
+          show(index - 1);
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          show(0);
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          show(slides.length - 1);
+        }
+      });
+      fromHash();
+    })();
+  </script>
+</body>
+</html>

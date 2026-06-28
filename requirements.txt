@@ -1,0 +1,14 @@
+# Runtime dependencies for the `difforb` Python package.
+# Documentation tooling remains in `docs/requirements.txt`.
+
+jax[cpu]>=0.4.30
+diffrax>=0.6
+equinox>=0.11.7
+jaxtyping>=0.2.36
+numpy>=1.26
+pandas>=2.1
+astropy>=6
+astropy-healpix>=1.1,<2
+jplephem>=2.21,<3
+requests>=2.31,<3
+typing-extensions>=4.10,<5

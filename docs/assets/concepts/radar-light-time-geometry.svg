@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 400" role="img" aria-labelledby="title desc">
+  <title id="title">Simplified radar two-way light-time geometry</title>
+  <desc id="desc">A black-and-white schematic showing a radar signal transmitted from a ground station, reflected at the target, and received by a ground station.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#111827" />
+    </marker>
+    <style>
+      .label { fill: #111827; font: 14px "Times New Roman", Times, serif; }
+      .label-bold { fill: #111827; font: 700 14px "Times New Roman", Times, serif; }
+      .body { fill: #f8fafc; stroke: #111827; stroke-width: 1.3; }
+      .target { fill: #f3f4f6; stroke: #111827; stroke-width: 1.3; }
+      .station { fill: #ffffff; stroke: #111827; stroke-width: 1.2; }
+      .bounce { fill: #111827; }
+      .signal { stroke: #111827; stroke-width: 1.3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="620" height="400" fill="#ffffff" />
+
+  <circle cx="310" cy="322" r="48" class="body" />
+  <text x="310" y="386" text-anchor="middle" class="label">Earth</text>
+
+  <circle cx="277" cy="287" r="5.5" class="station" />
+  <text x="135" y="281" class="label-bold">Transmitter</text>
+  <text x="154" y="299" class="label">transmit time</text>
+
+  <circle cx="343" cy="287" r="5.5" class="station" />
+  <text x="363" y="281" class="label-bold">Receiver</text>
+  <text x="363" y="299" class="label">receive epoch</text>
+
+  <path class="target" d="M 297 43 C 308 34 326 37 331 51 C 345 56 340 73 326 78 C 318 90 300 85 301 73 C 289 67 288 52 297 43 Z" />
+  <circle cx="310" cy="88.5" r="3.6" class="bounce" />
+  <text x="310" y="18" text-anchor="middle" class="label">Target</text>
+  <text x="332" y="92" class="label">bounce point</text>
+
+  <line x1="281" y1="282" x2="308" y2="93.5" class="signal" />
+  <text x="262" y="172" text-anchor="end" class="label-bold">up leg</text>
+  <text x="262" y="190" text-anchor="end" class="label">transmitter to target</text>
+
+  <line x1="312" y1="93.5" x2="339" y2="282" class="signal" />
+  <text x="358" y="172" class="label-bold">down leg</text>
+  <text x="358" y="190" class="label">target to receiver</text>
+</svg>

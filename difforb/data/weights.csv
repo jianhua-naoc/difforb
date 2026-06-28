@@ -1,0 +1,172 @@
+obs_type,obs_mode,observer_type,obs_note_code,site_code,program_code,catalog_code,sub_frame,date_min,date_max,sigma,comment
+OPTICAL,CCD|CMOS,*,*,*,*,*,*,*,*,1.00,Vereš et al. (2017) Table 3: Other/Catalog Known
+OPTICAL,CCD|CMOS,*,*,*,*,UNK,*,*,*,1.50,Vereš et al. (2017) Table 3: Other/Catalog Unknown
+
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,*,1890-01-01,10.00,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,*,1890-01-01,10.00,Vereš et al. (2017) Table 5
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,1890-01-01,1950-01-01,5.00,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,1890-01-01,1950-01-01,5.00,Vereš et al. (2017) Table 5
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,1950-01-01,*,2.50,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,1950-01-01,*,2.50,Vereš et al. (2017) Table 5
+
+OPTICAL,OCCULTATION,*,*,*,*,*,*,*,*,0.05,Weighting rule: Occultation
+OPTICAL,PMT,*,*,*,*,*,*,*,*,0.20,Weighting rule: Photo-Multiplier Tube
+OPTICAL,MERIDIAN,*,*,*,*,*,*,*,*,0.50,Vereš et al. (2017) Table 5: Transit circle
+OPTICAL,ENCODER,*,*,*,*,*,*,*,*,0.75,Vereš et al. (2017) Table 5: Encoder
+OPTICAL,MICRO,*,*,*,*,*,*,*,*,2.00,Vereš et al. (2017) Table 5: Micrometer
+OPTICAL,TDI,*,*,*,*,*,*,*,*,1.50,Weighting rule: Time-delay integration
+OPTICAL,*,SPACE_BASED,*,*,*,*,*,*,*,1.50,Vereš et al. (2017) Table 5: Satellite
+OPTICAL,*,SPACE_BASED,*,248,*,*,*,*,*,0.20,Vereš et al. (2017) Table 5: Hipparcos
+OPTICAL,VIDEO,*,*,*,*,*,*,*,*,1.00,Vereš et al. (2017) Table 5: Mini-normal place
+OPTICAL,VIDEO,*,*,*,*,UNK,*,*,*,1.50,Weighting rule: Video catalog unknown
+
+OPTICAL,CCD,*,*,703,*,*,*,*,2014-01-01,1.00,Vereš et al. (2017) Table 2: 703<2014
+OPTICAL,CCD,*,*,703,*,*,*,2014-01-01,*,0.80,Vereš et al. (2017) Table 2: 703>2014
+OPTICAL,CCD,*,*,691,*,*,*,*,2003-01-01,0.60,Vereš et al. (2017) Table 2: 691<2003
+OPTICAL,CCD,*,*,691,*,*,*,2003-01-01,*,0.50,Vereš et al. (2017) Table 2: 691>2003
+OPTICAL,CCD,*,*,644,*,*,*,*,2003-09-01,0.60,Vereš et al. (2017) Table 2: 644<2003-09
+OPTICAL,CCD,*,*,644,*,*,*,2003-09-01,*,0.40,Vereš et al. (2017) Table 2: 644>2003-09
+
+OPTICAL,CCD,*,*,704,*,*,*,*,*,1.00,Vereš et al. (2017) Table 3: 704
+OPTICAL,CCD,*,*,G96,*,*,*,*,*,0.50,Vereš et al. (2017) Table 3: G96
+OPTICAL,CCD,*,*,F51,*,*,*,*,*,0.20,Vereš et al. (2017) Table 3: F51
+OPTICAL,CCD,*,*,G45,*,*,*,*,*,0.60,Vereš et al. (2017) Table 3: G45
+OPTICAL,CCD,*,*,699,*,*,*,*,*,0.80,Vereš et al. (2017) Table 3: 699
+OPTICAL,CCD,*,*,D29,*,*,*,*,*,0.75,Vereš et al. (2017) Table 3: D29
+OPTICAL,CCD,*,*,C51,*,*,*,*,*,1.00,Vereš et al. (2017) Table 3: C51
+OPTICAL,CCD,*,*,E12,*,*,*,*,*,0.75,Vereš et al. (2017) Table 3: E12
+OPTICAL,CCD,*,*,608,*,*,*,*,*,0.60,Vereš et al. (2017) Table 3: 608
+OPTICAL,CCD,*,*,J75,*,*,*,*,*,1.00,Vereš et al. (2017) Table 3: J75
+
+OPTICAL,CCD,*,*,645,*,*,*,*,*,0.30,Vereš et al. (2017) Table 4: 645
+OPTICAL,CCD,*,*,673,*,*,*,*,*,0.30,Vereš et al. (2017) Table 4: 673
+OPTICAL,CCD,*,*,689,*,*,*,*,*,0.50,Vereš et al. (2017) Table 4: 689
+OPTICAL,CCD,*,*,950,*,*,*,*,*,0.50,Vereš et al. (2017) Table 4: 950
+OPTICAL,CCD,*,*,H01,*,*,*,*,*,0.30,Vereš et al. (2017) Table 4: H01
+OPTICAL,CCD,*,*,J04,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: J04
+OPTICAL,CCD,*,*,W84,*,*,*,*,*,0.50,Vereš et al. (2017) Table 4: W84
+OPTICAL,CCD,*,*,G83,00|02,UCAC4|PPMXL,*,*,*,0.30,Vereš et al. (2017) Table 4: G83/UCAC-4 and PPMXL
+OPTICAL,CCD,*,*,G83,00|02,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Vereš et al. (2017) Table 4: G83/Gaia
+OPTICAL,CCD,*,*,K92,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/K92
+OPTICAL,CCD,*,*,K93,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/K93
+OPTICAL,CCD,*,*,Q63,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/Q63
+OPTICAL,CCD,*,*,Q64,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/Q64
+OPTICAL,CCD,*,*,V37,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/V37
+OPTICAL,CCD,*,*,W85,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/W85
+OPTICAL,CCD,*,*,W86,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/W86
+OPTICAL,CCD,*,*,W87,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/W87
+OPTICAL,CCD,*,*,K91,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/K91
+OPTICAL,CCD,*,*,E10,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/E10
+OPTICAL,CCD,*,*,F65,*,*,*,*,*,0.40,Vereš et al. (2017) Table 4: LCO/F65
+OPTICAL,CCD,*,*,Y28,*,PPMXL|Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.30,Vereš et al. (2017) Table 4: Y28/PPMXL and Gaia
+OPTICAL,CCD,*,*,568,*,USNOB1,*,*,*,0.50,Vereš et al. (2017) Table 4: 568/USNO-B1.0 and USNO-B2.0 (USNO-B2.0 is not in the catalog list of IAU ADES)
+OPTICAL,CCD,*,*,568,*,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Vereš et al. (2017) Table 4: 568/Gaia
+OPTICAL,CCD,*,*,568,*,PPMXL,*,*,*,0.20,Vereš et al. (2017) Table 4: 568/PPMXL
+OPTICAL,CCD,*,*,T09,*,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Vereš et al. (2017) Table 4: T09/Gaia
+OPTICAL,CCD,*,*,T12,*,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Vereš et al. (2017) Table 4: T12/Gaia
+OPTICAL,CCD,*,*,T14,*,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Vereš et al. (2017) Table 4: T14/Gaia
+OPTICAL,CCD,*,*,309,00|0l,UCAC4|PPMXL,*,*,*,0.30,Vereš et al. (2017) Table 4: 309/UCAC-4 and PPMXL
+OPTICAL,CCD,*,*,309,00|0l,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Vereš et al. (2017) Table 4: 309/Gaia
+
+OPTICAL,CCD,*,*,F52,*,*,*,*,*,0.20,Station rule: F52 default
+OPTICAL,CCD,*,*,F51,15,*,*,*,*,1.00,Station rule: F51 packed program Z
+OPTICAL,CCD,*,*,F52,15,*,*,*,*,1.00,Station rule: F52 packed program Z
+OPTICAL,CCD,*,*,G96,15,*,*,*,*,1.00,Station rule: G96 packed program Z
+OPTICAL,CCD,*,*,703,15,*,*,*,*,1.00,Station rule: 703 packed program Z
+OPTICAL,CCD,*,*,291,*,*,*,*,2003-01-01,0.60,Station rule: 291 before 2003
+OPTICAL,CCD,*,*,291,*,*,*,2003-01-01,*,0.50,Station rule: 291 from 2003
+OPTICAL,CCD,*,*,T05,*,*,*,*,*,0.80,Station rule: T05
+OPTICAL,CCD,*,*,T07,*,*,*,*,*,0.80,Station rule: T07
+OPTICAL,CCD,*,*,T08,*,*,*,*,*,0.80,Station rule: T08
+OPTICAL,CCD,*,*,M22,*,*,*,*,*,0.80,Station rule: M22
+OPTICAL,CCD,*,*,W68,*,*,*,*,*,0.80,Station rule: W68
+
+OPTICAL,CCD,*,*,568,*,*,*,*,*,0.50,Station rule: 568 default
+OPTICAL,CCD,*,*,568,0T,UCAC4|PPMXL,*,*,*,0.25,Station rule: 568 packed program underscore UCAC4 or PPMXL
+OPTICAL,CCD,*,*,568,0T,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.15,Station rule: 568 packed program underscore Gaia
+OPTICAL,CCD,*,*,568,0S,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: 568 packed program caret Gaia
+OPTICAL,CCD,*,*,568,02,USNOB1|USNOB2,*,*,*,0.50,Station rule: 568 packed program 2 USNO-B
+OPTICAL,CCD,*,*,568,02,PPMXL,*,*,*,0.20,Station rule: 568 packed program 2 PPMXL
+OPTICAL,CCD,*,*,568,02,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Station rule: 568 packed program 2 Gaia
+OPTICAL,CCD,*,*,568,00,*,*,*,*,1.00,Station rule: 568 packed program 0
+
+OPTICAL,CCD,*,*,T09,*,*,*,*,*,0.50,Station rule: T09 default
+OPTICAL,CCD,*,*,T09,00,*,*,*,*,0.10,Station rule: T09 packed program 0
+OPTICAL,CCD,*,*,T09,01|04,*,*,*,*,1.00,Station rule: T09 packed programs 1 and 4
+OPTICAL,CCD,*,*,T09,02|03,*,*,*,*,0.50,Station rule: T09 packed programs 2 and 3
+OPTICAL,CCD,*,*,T09,*,*,*,*,2022-10-06,0.10,Station rule: T09 before 2022-10-06
+OPTICAL,CCD,*,*,T10,*,*,*,*,*,0.50,Station rule: T10
+OPTICAL,CCD,*,*,T11,*,*,*,*,*,0.50,Station rule: T11
+OPTICAL,CCD,*,*,T13,*,*,*,*,*,0.50,Station rule: T13
+OPTICAL,CCD,*,*,T16,*,*,*,*,*,0.50,Station rule: T16
+OPTICAL,CCD,*,*,T17,*,*,*,*,*,0.50,Station rule: T17
+OPTICAL,CCD,*,*,T12,*,*,*,*,*,0.50,Station rule: T12 default
+OPTICAL,CCD,*,*,T12,00,*,*,*,*,0.10,Station rule: T12 packed program 0
+OPTICAL,CCD,*,*,T12,01,*,*,*,*,0.20,Station rule: T12 packed program 1
+OPTICAL,CCD,*,*,T12,02|03,*,*,*,*,0.50,Station rule: T12 packed programs 2 and 3
+OPTICAL,CCD,*,*,T12,*,*,*,*,2022-10-06,0.10,Station rule: T12 before 2022-10-06
+OPTICAL,CCD,*,*,T14,*,*,*,*,*,0.50,Station rule: T14 default
+OPTICAL,CCD,*,*,T14,00|07,*,*,*,*,0.10,Station rule: T14 packed programs 0 and 7
+OPTICAL,CCD,*,*,T14,01|02|04|06|08,*,*,*,*,0.50,Station rule: T14 packed programs 1 2 4 6 and 8
+OPTICAL,CCD,*,*,T14,03,*,*,*,*,0.20,Station rule: T14 packed program 3
+OPTICAL,CCD,*,*,T14,05,*,*,*,*,1.00,Station rule: T14 packed program 5
+OPTICAL,CCD,*,*,T14,*,*,*,*,2022-10-06,0.10,Station rule: T14 before 2022-10-06
+OPTICAL,CCD,*,*,T15,*,*,*,*,*,0.50,Station rule: T15 default
+OPTICAL,CCD,*,*,T15,02,*,*,*,*,1.00,Station rule: T15 packed program 2
+
+OPTICAL,CCD,*,*,H01,*,*,*,*,*,1.00,Station rule: H01 default
+OPTICAL,CCD,*,*,H01,*,2MASS|PPMXL|Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.30,Station rule: H01 selected catalogs
+OPTICAL,CCD,*,*,673,*,*,*,*,*,1.00,Station rule: 673 default
+OPTICAL,CCD,*,*,673,01,*,*,*,*,0.30,Station rule: 673 packed program 1
+OPTICAL,CCD,*,*,J04,*,*,*,*,*,1.00,Station rule: J04 default
+OPTICAL,CCD,*,*,J04,*,Gaia1|Gaia2|Gaia3E|Gaia3|PPMXL|2MASS|UCAC4|UCAC2|UCAC3|UCAC1,*,*,*,0.50,Station rule: J04 selected catalogs
+OPTICAL,CCD,*,*,J04,02|0D,PPMXL|UCAC4|Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.30,Station rule: J04 packed programs 2 and dollar selected catalogs
+OPTICAL,CCD,*,*,J04,0C,*,*,*,*,1.00,Station rule: J04 packed program hash
+OPTICAL,CCD,*,*,Z84,*,*,*,*,*,1.00,Station rule: Z84 default
+OPTICAL,CCD,*,*,Z84,*,Gaia1|Gaia2|Gaia3E|Gaia3|PPMXL|2MASS|UCAC4|UCAC2|UCAC3|UCAC1,*,*,*,0.50,Station rule: Z84 selected catalogs
+OPTICAL,CCD,*,*,Z84,01|07,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.30,Station rule: Z84 packed programs 1 and 7 Gaia
+OPTICAL,CCD,*,*,W84,0F,*,*,*,*,1.00,Station rule: W84 packed program ampersand
+OPTICAL,CCD,*,*,950,*,*,*,*,*,1.00,Station rule: 950 default
+OPTICAL,CCD,*,*,950,*,Gaia1|Gaia2|Gaia3E|Gaia3|PPMXL|2MASS|UCAC4|UCAC2|UCAC3|UCAC1,*,*,*,0.50,Station rule: 950 selected catalogs
+OPTICAL,CCD,*,*,950,0f,*,*,*,*,1.00,Station rule: 950 packed program at
+
+OPTICAL,CCD,*,*,E10,0H|0N,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: E10 packed programs left parenthesis and dot Gaia
+OPTICAL,CCD,*,*,F65,08|09,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: F65 packed programs 8 and 9 Gaia
+OPTICAL,CCD,*,*,V39,*,*,*,*,*,0.40,Station rule: V39 default
+OPTICAL,CCD,*,*,Z24,*,*,*,*,*,0.40,Station rule: Z24 default
+OPTICAL,CCD,*,*,Z31,*,*,*,*,*,0.40,Station rule: Z31 default
+OPTICAL,CCD,*,*,K91,00|03,*,*,*,*,0.30,Station rule: K91 packed programs 0 and 3
+OPTICAL,CCD,*,*,K92,00|03,*,*,*,*,0.30,Station rule: K92 packed programs 0 and 3
+OPTICAL,CCD,*,*,K93,00|03,*,*,*,*,0.30,Station rule: K93 packed programs 0 and 3
+OPTICAL,CCD,*,*,Q63,00|03,*,*,*,*,0.30,Station rule: Q63 packed programs 0 and 3
+OPTICAL,CCD,*,*,Q64,00|03,*,*,*,*,0.30,Station rule: Q64 packed programs 0 and 3
+OPTICAL,CCD,*,*,V39,00|03,*,*,*,*,0.30,Station rule: V39 packed programs 0 and 3
+OPTICAL,CCD,*,*,W85,00|03,*,*,*,*,0.30,Station rule: W85 packed programs 0 and 3
+OPTICAL,CCD,*,*,W86,00|03,*,*,*,*,0.30,Station rule: W86 packed programs 0 and 3
+OPTICAL,CCD,*,*,W87,00|03,*,*,*,*,0.30,Station rule: W87 packed programs 0 and 3
+OPTICAL,CCD,*,*,Z24,00|03,*,*,*,*,0.30,Station rule: Z24 packed programs 0 and 3
+OPTICAL,CCD,*,*,Z31,00|03,*,*,*,*,0.30,Station rule: Z31 packed programs 0 and 3
+OPTICAL,CCD,*,*,V37,00|06,*,*,*,*,0.30,Station rule: V37 packed programs 0 and 6
+
+OPTICAL,CCD,*,*,309,*,*,*,*,*,1.00,Station rule: 309 default
+OPTICAL,CCD,*,*,309,*,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: 309 Gaia
+OPTICAL,CCD,*,*,309,0F|0E,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Station rule: 309 packed programs ampersand and percent Gaia
+OPTICAL,CCD,*,*,309,*,PPMXL|UCAC4,*,*,*,0.30,Station rule: 309 PPMXL or UCAC4
+OPTICAL,CCD,*,*,G83,*,*,*,*,*,1.00,Station rule: G83 default
+OPTICAL,CCD,*,*,G83,02,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: G83 packed program 2 Gaia
+OPTICAL,CCD,*,*,C65,03,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: C65 packed program 3 Gaia
+OPTICAL,CCD,*,*,094,09,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.50,Station rule: 094 packed program 9 Gaia
+OPTICAL,CCD,*,*,Z18,01,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.10,Station rule: Z18 packed program 1 Gaia
+OPTICAL,CCD,*,*,181,01,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.50,Station rule: 181 packed program 1 Gaia
+OPTICAL,CCD,*,*,D20,01|04,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.50,Station rule: D20 packed programs 1 and 4 Gaia
+OPTICAL,CCD,*,*,G37,05,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.20,Station rule: G37 packed program 5 Gaia
+OPTICAL,CCD,*,*,N50,02,Gaia1|Gaia2|Gaia3E|Gaia3,*,*,*,0.30,Station rule: N50 packed program 2 Gaia
+OPTICAL,CCD,*,*,I41,15,*,*,*,*,1.00,Station rule: I41 packed program Z
+OPTICAL,CCD,*,*,W57,00|01,*,*,*,*,0.40,Station rule: W57 packed programs 0 and 1
+OPTICAL,CCD,*,*,M28,*,*,*,*,*,3.00,Station rule: M28
+OPTICAL,CCD,*,*,247,*,*,*,*,*,2.00,Station rule: 247
+OPTICAL,CCD,*,*,270,*,*,*,*,*,2.00,Station rule: 270
+
+OPTICAL,*,*,*,*,*,*,B1950.0,*,1890-01-01,10.00,Vereš et al. (2017) Table 5: B1950 converted photographic
+OPTICAL,*,*,*,*,*,*,B1950.0,1890-01-01,1950-01-01,5.00,Vereš et al. (2017) Table 5: B1950 converted photographic
+OPTICAL,*,*,*,*,*,*,B1950.0,1950-01-01,*,2.50,Vereš et al. (2017) Table 5: B1950 converted photographic

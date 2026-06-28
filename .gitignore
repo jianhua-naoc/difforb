@@ -1,0 +1,54 @@
+# OS and editor metadata
+.DS_Store
+.idea/
+
+# Local agent and machine-specific instructions
+AGENTS.md
+
+# Python cache and tooling output
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.nox/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Python build output and local environments
+build/
+dist/
+!docs/assets/vendor/katex/dist/
+!docs/assets/vendor/katex/dist/**
+wheelhouse/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+
+# Documentation output
+site/
+docs/_build/
+
+# Notebooks and local scratch files
+.ipynb_checkpoints/
+*.log
+*.tmp
+
+# Local environment configuration
+.env
+.env.*
+!.env.example
+
+# Local data and machine-specific config
+difforb/data/debias_2018/
+difforb/data/iers/
+difforb/data/obs_code/iau_obs_codes.txt
+
+# Local external test kernels
+tests/data/spk/*.bsp
