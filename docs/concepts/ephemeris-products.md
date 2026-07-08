@@ -33,7 +33,7 @@ ground observers.[^urban]
 
 Radar products use the two-way light-time model described by Yeomans et al. (1992).[^yeomans] The delay can
 include relativistic delay, solar-corona delay, and tropospheric delay.[^shapiro][^muhleman-anderson][^standish][^urban]
-Radar Doppler is the derivative of the converged two-way delay with respect to the receive epoch.
+Radar Doppler is the derivative of the converged two-way delay with respect to the selected radar reference epoch.
 
 Element, apsides, and close-approach products are derived from the propagated target trajectory. They do not apply
 observer light-time corrections.

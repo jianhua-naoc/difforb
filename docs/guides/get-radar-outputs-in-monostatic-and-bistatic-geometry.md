@@ -1,19 +1,16 @@
 # Get Radar Outputs In Monostatic And Bistatic Geometry
 
-This guide shows how to get DiffOrb radar outputs for 2025 BC10 at DSS-14 receive epochs and compare them with JPL
-radar astrometry records.
+This guide shows how to get DiffOrb radar outputs for 2025 BC10, compare receive-epoch predictions with JPL radar astrometry records, and request transmit-epoch pointing for radar guidance.
 
 For the model behind these outputs, read [Light-Time Model](../concepts/light-time-model.md).
 
 ## Prerequisites
 
 - Activate the project environment described in [Installation](../installation.md).
-- You need a local planetary SPK kernel. Replace the placeholder path in the snippet with a local file such as
-  `de441.bsp`.
+- You need a local planetary SPK kernel and a local asteroid SPK kernel. Replace the placeholder paths in the snippet with local files such as `de441.bsp` and `sb441-n16.bsp`.
 - The target must already have a propagated trajectory before `radar_table(...)` can be called.
-- The propagated interval must cover the receive epoch and the earlier transmit and target epochs reached by the two-way
-  light-time solution.
-- `t_rec` is the receive epoch.
+- The propagated interval must cover the supplied reference epoch and the other epochs reached by the two-way light-time solution.
+- `radar_table(...)` uses `epoch_at="receive"` by default, so `t` is a receive epoch unless you request `epoch_at="transmit"`.
 - The comparison values below come from the
   [NASA/JPL Small-Body Radar Astrometry API](https://ssd-api.jpl.nasa.gov/doc/sb_radar.html) query for `2025 BC10`.
 - Receive epochs before `1962-01-01` are not supported.
@@ -21,8 +18,7 @@ For the model behind these outputs, read [Light-Time Model](../concepts/light-ti
 
 ## 1. Prepare inputs
 
-Use a `BCRS` state for 2025 BC10 at `TDB JD 2460741.5`, Goldstone DSS-14 (`253`), and the 8.56 GHz transmit
-frequency reported with the JPL radar records.
+Use a `BCRS` state for 2025 BC10 at `TDB JD 2460741.5`, Goldstone DSS-14 (`253`), and the 8.56 GHz transmit frequency reported with the JPL radar records. The propagation uses the extended dynamical system, so the large-asteroid perturbing bodies require the asteroid SPK kernel.
 
 Replace the initial state with your own fitted orbit when you need to compare another orbit solution.
 
@@ -35,7 +31,8 @@ from difforb.ephemeris import EphemerisGenerator
 from difforb.integrator import NumericalIntegrator
 
 planetary_kernel = "/path/to/your/de441.bsp"
-set_default_ephemeris(planetary_kernel)
+asteroid_kernel = "/path/to/your/sb441-n16.bsp"
+set_default_ephemeris([planetary_kernel, asteroid_kernel])
 
 t0 = Time.from_tdb_jd(2460741.0, 0.5)
 state0 = State(
@@ -46,7 +43,7 @@ state0 = State(
 )
 
 body = SmallBody.create(state0)
-force_model = DynamicSystem.from_standard_system().build_force_model()
+force_model = DynamicSystem.from_extended_system().build_force_model()
 integrator = NumericalIntegrator(method="IAS15", tol=1e-12)
 body = body.propagate(
     t0.tdb(),
@@ -81,6 +78,7 @@ delay_prediction = generator.radar_table(
     delay_epoch,
     rx=rx,
     tx_freq=tx_freq,
+    epoch_at="receive",
 )
 
 print("MODEL_DELAY_US", round(float(delay_prediction.radar_delay), 3))
@@ -90,10 +88,10 @@ print("MODEL_RANGE_AU", float(delay_prediction.radar_range))
 ```
 
 ```text title="Output"
-MODEL_DELAY_US 25268924.179
+MODEL_DELAY_US 25268924.17
 JPL_DELAY_US 25268924.08
-DELAY_RESIDUAL_US 0.099
-MODEL_RANGE_AU 0.05063864114659815
+DELAY_RESIDUAL_US 0.09
+MODEL_RANGE_AU 0.05063864112917258
 ```
 
 `DELAY_RESIDUAL_US` is `model - JPL`. This value is tied to the initial orbit, force model, integrator tolerance, SPK
@@ -103,8 +101,10 @@ The returned fields used here are:
 
 - `radar_delay` in microseconds
 - `radar_range` in `au`
+- `tx_azimuth` and `tx_elevation` in degrees
+- `rx_azimuth` and `rx_elevation` in degrees
 
-Both values are two-way quantities reported at the receive epoch.
+Delay and range are two-way quantities reported for the reference epoch. The pointing angles are split by transmitter and receiver endpoint.
 
 ## 3. Compare monostatic Doppler
 
@@ -116,6 +116,7 @@ doppler_prediction = generator.radar_table(
     doppler_epoch,
     rx=rx,
     tx_freq=tx_freq,
+    epoch_at="receive",
 )
 
 print("MODEL_DOPPLER_HZ", round(float(doppler_prediction.radar_doppler), 3))
@@ -128,7 +129,7 @@ print("MODEL_RATE_AU_PER_D", float(doppler_prediction.radar_rate))
 MODEL_DOPPLER_HZ -245905.726
 JPL_DOPPLER_HZ -245905.543
 DOPPLER_RESIDUAL_HZ -0.183
-MODEL_RATE_AU_PER_D 0.004973978579719754
+MODEL_RATE_AU_PER_D 0.004973978575682943
 ```
 
 `DOPPLER_RESIDUAL_HZ` is also `model - JPL`.
@@ -140,15 +141,46 @@ The returned fields used here are:
 
 Both values are two-way quantities reported at the receive epoch.
 
+## 4. Get transmit-epoch pointing for guidance
+
+For radar guidance, use the station transmit time as `t` and set `epoch_at="transmit"`. The returned table still reports the solved two-way delay and Doppler, but the reference epoch stored in `table.t` is the transmit epoch.
+
+```python
+transmit_epoch = Time.from_utc_date(2025, 4, 5, 19, 30, 0.0)
+
+guidance = generator.radar_table(
+    transmit_epoch,
+    rx=rx,
+    tx_freq=tx_freq,
+    epoch_at="transmit",
+)
+
+print("TX_AZ_DEG", float(guidance.tx_azimuth))
+print("TX_EL_DEG", float(guidance.tx_elevation))
+print("RX_AZ_DEG", float(guidance.rx_azimuth))
+print("RX_EL_DEG", float(guidance.rx_elevation))
+print("ROUND_TRIP_DELAY_US", float(guidance.radar_delay))
+```
+
+```text title="Output"
+TX_AZ_DEG 64.11405417154161
+TX_EL_DEG 21.98592316142398
+RX_AZ_DEG 64.1607155655092
+RX_EL_DEG 22.060486811022276
+ROUND_TRIP_DELAY_US 25234524.37860918
+```
+
+Use the `tx_*` fields to point the transmitting antenna at the transmit epoch. Use the `rx_*` fields for the receive-side pointing at the solved return epoch.
+
 ## Common Mistakes
 
-- `t_rec` is the receive epoch, not the transmit epoch.
+- `t` is interpreted by `epoch_at`; use `epoch_at="transmit"` when the known epoch is the station transmit time.
 - `tx_freq` must be given in `Hz`; multiply JPL `MHz` values by `1e6`.
 - If `tx` is omitted, DiffOrb uses `rx`, so the call is monostatic.
 - `radar_delay`, `radar_doppler`, `radar_range`, and `radar_rate` are all two-way quantities.
 - Residuals depend on the orbit, force model, integrator tolerance, and SPK kernel.
 - Receive epochs before `1962-01-01` are not supported.
-- The propagated interval must cover the earlier epochs reached by the two-way light-time solution.
+- The propagated interval must cover the target bounce epoch reached by the two-way light-time solution.
 
 ## Next Steps
 

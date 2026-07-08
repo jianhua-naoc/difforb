@@ -147,6 +147,10 @@ RADAR_TABLE_SPECS: tuple[DisplayFieldSpec, ...] = (
     DisplayFieldSpec("radar_doppler", "radar_doppler_hz", "radar_doppler"),
     DisplayFieldSpec("radar_range", "radar_range_au", "radar_range"),
     DisplayFieldSpec("radar_rate", "radar_rate_au_per_d", "radar_rate"),
+    DisplayFieldSpec("tx_azimuth", "tx_azimuth_deg", "tx_azimuth", scientific=False, signed=False),
+    DisplayFieldSpec("tx_elevation", "tx_elevation_deg", "tx_elevation", scientific=False, signed=True),
+    DisplayFieldSpec("rx_azimuth", "rx_azimuth_deg", "rx_azimuth", scientific=False, signed=False),
+    DisplayFieldSpec("rx_elevation", "rx_elevation_deg", "rx_elevation", scientific=False, signed=True),
 )
 
 

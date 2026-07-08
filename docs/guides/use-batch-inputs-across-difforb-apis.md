@@ -35,7 +35,7 @@ Common public batch-aware APIs include:
 | `SmallBody.state(...)` | target batch and query epochs | target-time batch |
 | `EphemerisGenerator.vector_table(...)` | target, observer, and observation-time batches | observer-product batch |
 | `EphemerisGenerator.optical_table(...)` | target, observer, and observation-time batches | optical-product batch |
-| `EphemerisGenerator.radar_table(...)` | target, receiver or transmitter geometry, frequency, and receive-time batches | radar-product batch |
+| `EphemerisGenerator.radar_table(...)` | target, receiver or transmitter geometry, frequency, and reference-time batches | radar-product batch |
 | `EphemerisGenerator.elements_table(...)` | target and `TDB` epoch batches | target-time batch |
 | `EphemerisGenerator.find_apsides(...)` | target and search-interval batches | apsides-event batch |
 | `EphemerisGenerator.find_close_approaches(...)` | target and search-interval batches | close-approach-event batch |

@@ -107,24 +107,27 @@ class EphemerisGenerator(eqx.Module):
     @eqx.filter_jit
     def radar_table(
             self,
-            t_rec: Time,
+            t: Time,
             rx: Site,
             tx: Site = None,
             tx_freq: Float[Array, "..."] = 0.,
+            epoch_at: str = "receive",
             grid: bool = False,
     ) -> RadarTable:
         """Build radar tables.
 
         Parameters
         ----------
-        t_rec : Time
-            Receive epochs at the receiver site. Epochs before 1962-01-01 are not supported.
+        t : Time
+            Reference epochs. If ``epoch_at="receive"``, these are receive epochs at the receiver site. If ``epoch_at="transmit"``, these are transmit epochs at the transmitter site. Epochs before 1962-01-01 are not supported.
         rx : Site
             Receiver sites.
         tx : Site, optional
             Transmitter sites. If ``None``, use ``rx``.
         tx_freq : Float[Array, "..."], default=0
             Transmit frequencies in ``Hz``.
+        epoch_at : {"receive", "transmit"}, default="receive"
+            Signal-path endpoint represented by ``t``.
         grid : bool, default=False
             If ``False``, use point-wise broadcasting. If ``True``, use the Cartesian product of the input batches.
 
@@ -135,21 +138,23 @@ class EphemerisGenerator(eqx.Module):
 
         Raises
         ------
+        ValueError
+            Raised when ``epoch_at`` is not ``"receive"`` or ``"transmit"``.
         RuntimeError
-            Raised when any receive epoch is earlier than 1962-01-01, or when the target trajectory is not initialized or the requested epoch is outside the propagated coverage.
+            Raised when any reference epoch is earlier than 1962-01-01, or when the target trajectory is not initialized or the requested epoch is outside the propagated coverage.
 
         Notes
         -----
         Vectorize :func:`difforb.ephemeris.core.generate_radar_table_single`.
         """
         wrapper = partial(generate_radar_table_single_reorder, sun=self.sun,
-                          earth=self.earth)
+                          earth=self.earth, epoch_at=epoch_at)
         if not grid:
             return safe_dispatch(wrapper, (0, 0, 0, 0, 0), self.target, rx, tx, tx_freq,
-                                 t_rec)
+                                 t)
         else:
             return safe_cartesian_dispatch(wrapper, ((0,), (self.target,)), ((0,), (rx,)),
-                                           ((0, 0), (tx, tx_freq)), ((0,), (t_rec,)))
+                                           ((0, 0), (tx, tx_freq)), ((0,), (t,)))
 
     @eqx.filter_jit
     def vector_table(self, t_obs: Time, observer: 'Site', grid: bool = False) -> VectorTable:

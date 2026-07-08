@@ -14,7 +14,7 @@ import equinox as eqx
 
 from difforb.astrometry.reduction.optical import compute_astrometric_vector_single, correct_light_bending_single, \
     compute_geometric_vector_single, correct_stellar_aberration_single
-from difforb.astrometry.reduction.radar import compute_radar_obs_single
+from difforb.astrometry.reduction.radar import compute_radar_obs_single, compute_radar_obs_transmit_single
 from difforb.astrometry.reduction.lt import LightTimeContext
 from difforb.astrometry.reduction.refraction import WeatherParams, auer_standish_refraction_single
 from difforb.body.ephbody import EphemerisBody
@@ -141,8 +141,10 @@ class RadarTable(BatchableObject):
 
     Parameters
     ----------
-    t_rec : Time
-        Receive epoch at the receiver site.
+    t : Time
+        Reference epoch supplied by the caller. Its endpoint is set by ``epoch_at``.
+    epoch_at : {"receive", "transmit"}
+        Signal-path endpoint represented by ``t``.
     radar_delay : Float[Array, "..."]
         Two-way light time in microseconds.
     radar_doppler : Float[Array, "..."]
@@ -151,13 +153,22 @@ class RadarTable(BatchableObject):
         Two-way range in ``au``.
     radar_rate : Float[Array, "..."]
         Two-way range rate in ``au / day``.
+    tx_azimuth, tx_elevation : Float[Array, "..."]
+        Transmitter pointing azimuth and elevation in degrees at the transmit epoch. Space transmitter rows are ``NaN``.
+    rx_azimuth, rx_elevation : Float[Array, "..."]
+        Receiver pointing azimuth and elevation in degrees at the receive epoch. Space receiver rows are ``NaN``.
     """
-    t_rec: Time
+    t: Time
+    epoch_at: str = eqx.field(static=True)
     # --- Radar Measurement ---
     radar_delay: Float[Array, "..."]  # [us]
     radar_doppler: Float[Array, "..."]  # [Hz]
     radar_range: Float[Array, "..."]  # [au]
     radar_rate: Float[Array, "..."]  # [au/day]
+    tx_azimuth: Float[Array, "..."]  # [deg]
+    tx_elevation: Float[Array, "..."]  # [deg]
+    rx_azimuth: Float[Array, "..."]  # [deg]
+    rx_elevation: Float[Array, "..."]  # [deg]
 
     @property
     def shape(self):
@@ -168,7 +179,8 @@ class RadarTable(BatchableObject):
             self.__class__.__name__,
             [
                 ("shape", format_shape(self.shape)),
-                ("epoch_jd", format_float_array(self.t_rec.jd, precision=9, scientific=False, signed=False)),
+                ("epoch_at", self.epoch_at),
+                ("epoch_tt_jd", format_float_array(self.t.tt.jd, precision=9, scientific=False, signed=False)),
                 *repr_fields_from_specs(self, RADAR_TABLE_SPECS),
             ],
         )
@@ -477,14 +489,31 @@ def generate_optical_table_single_reorder(target: SmallBody, observer: Site, t_o
 # 4. Radar Table
 # ==========================================
 
-def generate_radar_table_single(t_rec: Time, rx: Site, tx: Site, tx_freq: float,
-                                target: SmallBody, sun: EphemerisBody, earth: EphemerisBody) -> RadarTable:
+def _radar_table_from_observation(t: Time, epoch_at: str, radar_obs) -> RadarTable:
+    """Build one radar table from a reduced radar observation."""
+    return RadarTable(
+        t=t,
+        epoch_at=epoch_at,
+        radar_delay=radar_obs.delay,
+        radar_range=radar_obs.range,
+        radar_doppler=radar_obs.doppler_shift,
+        radar_rate=radar_obs.rate,
+        tx_azimuth=radar_obs.tx_azimuth,
+        tx_elevation=radar_obs.tx_elevation,
+        rx_azimuth=radar_obs.rx_azimuth,
+        rx_elevation=radar_obs.rx_elevation,
+    )
+
+
+def generate_radar_table_single(t: Time, rx: Site, tx: Site, tx_freq: float,
+                                target: SmallBody, sun: EphemerisBody, earth: EphemerisBody,
+                                epoch_at: str = "receive") -> RadarTable:
     """Build one radar table.
 
     Parameters
     ----------
-    t_rec : Time
-        Receive epoch at the receiver site.
+    t : Time
+        Reference epoch. If ``epoch_at="receive"``, this is the receive epoch at the receiver site. If ``epoch_at="transmit"``, this is the transmit epoch at the transmitter site.
     rx : Site
         Receiver site.
     tx : Site
@@ -497,34 +526,38 @@ def generate_radar_table_single(t_rec: Time, rx: Site, tx: Site, tx_freq: float,
         Sun ephemeris body.
     earth : EphemerisBody
         Earth ephemeris body.
+    epoch_at : {"receive", "transmit"}, default="receive"
+        Signal-path endpoint represented by ``t``.
 
     Returns
     -------
     RadarTable
-        Two-way radar observables.
+        Two-way radar observables and transmitter/receiver pointing angles.
 
     Raises
     ------
+    ValueError
+        If ``epoch_at`` is not ``"receive"`` or ``"transmit"``.
     RuntimeError
         If the target trajectory is not initialized or the requested epoch is outside the propagated coverage.
     """
+    if epoch_at not in ("receive", "transmit"):
+        raise ValueError("`epoch_at` must be 'receive' or 'transmit'.")
     radar_context = LightTimeContext(sun=sun, earth=earth, atmos_cor_enable=True, corona_cor_enable=True)
     if tx is None:
         tx = rx
-    radar_obs = compute_radar_obs_single(t_rec, rx, tx, tx_freq, target, radar_context)
-    radar_delay, radar_range, radar_doppler, radar_rate = (radar_obs.delay, radar_obs.range, radar_obs.doppler_shift,
-                                                           radar_obs.rate)
-
-    return RadarTable(t_rec=t_rec, radar_delay=radar_delay, radar_range=radar_range,
-                      radar_doppler=radar_doppler, radar_rate=radar_rate)
+    if epoch_at == "receive":
+        radar_obs = compute_radar_obs_single(t, rx, tx, tx_freq, target, radar_context)
+    else:
+        radar_obs = compute_radar_obs_transmit_single(t, rx, tx, tx_freq, target, radar_context)
+    return _radar_table_from_observation(t, epoch_at, radar_obs)
 
 
 def generate_radar_table_single_reorder(target: SmallBody, rx: Site, tx: Site, tx_freq: float,
-                                        t_rec: Time, sun: EphemerisBody,
-                                        earth: EphemerisBody) -> RadarTable:
+                                        t: Time, sun: EphemerisBody,
+                                        earth: EphemerisBody, epoch_at: str) -> RadarTable:
     """Reorder ``generate_radar_table_single`` arguments for batch dispatch."""
-    return generate_radar_table_single(t_rec, rx, tx, tx_freq, target, sun,
-                                       earth)
+    return generate_radar_table_single(t, rx, tx, tx_freq, target, sun, earth, epoch_at)
 
 
 # ==========================================

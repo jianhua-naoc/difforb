@@ -156,7 +156,7 @@ print(float(radar.radar_rate))
 0.02374434567641431
 ```
 
-These values are `radar_delay`, `radar_range`, `radar_doppler`, and `radar_rate`. The units are microseconds, `au`, `Hz`, and `au / day`.
+These values are `radar_delay`, `radar_range`, `radar_doppler`, and `radar_rate`. The units are microseconds, `au`, `Hz`, and `au / day`. The table also includes transmitter pointing fields `tx_azimuth` and `tx_elevation`, and receiver pointing fields `rx_azimuth` and `rx_elevation`, all in degrees.
 
 ## Make An Element Table
 

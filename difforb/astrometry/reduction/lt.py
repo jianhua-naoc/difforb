@@ -581,6 +581,258 @@ def down_leg_light_time(
         return safe_cartesian_dispatch(wrapper, ((0,), (target,)), ((0, 0), (rx, tx_freq)), ((0,), (t_rec,)))
 
 
+def forward_up_leg_light_time_single(t_trm: Time, tx: Site, target: SmallBody,
+                                     context: LightTimeContext, tx_freq: float,
+                                     tol: float = 1e-14) -> Tuple[LightPath, Time]:
+    """Solve a transmit-to-target light-time path from a fixed transmit epoch.
+
+    Parameters
+    ----------
+    t_trm : Time
+        Transmit epoch at the transmitter site.
+    tx : Site
+        Transmitter site.
+    target : SmallBody
+        Target body with the propagated trajectory.
+    context : LightTimeContext
+        Delay-model configuration.
+    tx_freq : float
+        Signal frequency in ``Hz``. This is only used when the corona correction is enabled.
+    tol : float, default=1e-14
+        Convergence tolerance for the fixed-point light-time iteration, in days.
+
+    Returns
+    -------
+    tuple[LightPath, Time]
+        Solved up-leg path and target bounce epoch.
+
+    Raises
+    ------
+    RuntimeError
+        If the target trajectory is not initialized or the requested epoch is outside the propagated coverage.
+
+    Notes
+    -----
+    The path starts at the transmitter at transmit time and ends at the target at bounce time.
+    """
+    sun = context.sun
+    earth = context.earth
+    max_iters = 6
+
+    # -------------------------------------------------------------------------
+    # Step 1: Build the fixed transmit-end geometry
+    # -------------------------------------------------------------------------
+    tx_state_trm = tx.state(t_trm, frame=BCRS, earth=earth)
+    tx_pos_trm = tx_state_trm.pos
+    tx_vel_trm = tx_state_trm.vel
+    t_trm_tdb = tx_state_trm.tdb
+    t_trm_tdb_jd1 = t_trm_tdb.jd1
+    t_trm_tdb_jd2 = t_trm_tdb.jd2
+    t_trm_tt_jd1 = t_trm._tt_jd1
+    t_trm_tt_jd2 = t_trm._tt_jd2
+    eop = t_trm.eop
+    gregorian_start = t_trm.gregorian_start
+    if context.atmos_cor_enable:
+        earth2tx_state_trm = tx.state(t_trm, frame=GCRS)
+        earth2tx_pos_trm = earth2tx_state_trm.pos
+        dist_earth2tx_trm = jnp.linalg.norm(earth2tx_pos_trm, axis=-1)
+    if context.corona_cor_enable:
+        sun_pos_trm = sun._bcrs_pos_jd(t_trm_tdb_jd1, t_trm_tdb_jd2)
+        sun2tx_pos_trm = tx_pos_trm - sun_pos_trm
+        sun2tx_pos_trm_helio = bcrs_to_heliographic_rotation(sun2tx_pos_trm)
+
+    def body_func(carry):
+        i, cur_t_bounce_tt_jd2, prev_t_bounce_tt_jd2, *_ = carry
+        t_bounce = Time.from_tt_jd(t_trm_tt_jd1, cur_t_bounce_tt_jd2, eop=eop, gregorian_start=gregorian_start)
+        t_bounce_tdb = t_bounce.tdb()
+        t_bounce_tdb_jd1, t_bounce_tdb_jd2 = t_bounce_tdb.jd1, t_bounce_tdb.jd2
+        target_pos_bounce, target_vel_bounce = target._bcrs_pv_jd(t_bounce_tdb_jd1, t_bounce_tdb_jd2)
+        up_pos = target_pos_bounce - tx_pos_trm
+        up_vel = target_vel_bounce - tx_vel_trm
+        up_dist = jnp.linalg.norm(up_pos, axis=-1)
+        lt_tdb = up_dist / C
+        rel_delay = sum_relativistic_time_delay(
+            context.shapiro_bodies,
+            t_trm_tdb_jd1, t_trm_tdb_jd2,
+            tx_pos_trm,
+            t_bounce_tdb_jd1, t_bounce_tdb_jd2,
+            target_pos_bounce,
+            up_dist
+        )
+        lt_tdb = lt_tdb + rel_delay
+
+        if context.atmos_cor_enable:
+            cosz = jnp.sum(earth2tx_pos_trm * up_pos, axis=-1) / (
+                    dist_earth2tx_trm * up_dist)
+            atm_delay = atmosphere_time_delay(cosz)
+            lt_tdb = lt_tdb + atm_delay
+
+        if context.corona_cor_enable:
+            sun_pos_bounce = sun._bcrs_pos_jd(t_bounce_tdb_jd1, t_bounce_tdb_jd2)
+            sun2target_pos_bounce = target_pos_bounce - sun_pos_bounce
+            sun2target_pos_bounce_helio = bcrs_to_heliographic_rotation(sun2target_pos_bounce)
+            corona_delay = solar_corona_delay(sun2tx_pos_trm_helio, sun2target_pos_bounce_helio, tx_freq)
+            lt_tdb = lt_tdb + corona_delay
+
+        actual_lt_tdb = (t_bounce_tdb_jd1 - t_trm_tdb_jd1) + (t_bounce_tdb_jd2 - t_trm_tdb_jd2)
+        lt_err = lt_tdb - actual_lt_tdb
+        new_t_bounce_tt_jd2 = cur_t_bounce_tt_jd2 + lt_err
+
+        return (i + 1, new_t_bounce_tt_jd2, cur_t_bounce_tt_jd2, up_pos, up_vel, up_dist,
+                target_pos_bounce, target_vel_bounce, lt_tdb, t_bounce_tdb, t_bounce)
+
+    def cond_func(carry):
+        i, cur_t_bounce_tt_jd2, prev_t_bounce_tt_jd2, *_ = carry
+        err = jnp.max(jnp.abs(cur_t_bounce_tt_jd2 - prev_t_bounce_tt_jd2), initial=0.)
+        return (err > tol) & (i < max_iters)
+
+    # -------------------------------------------------------------------------
+    # Step 2: Build the initial guess
+    # -------------------------------------------------------------------------
+    target_pos_trm, target_vel_trm = target._bcrs_pv_jd(t_trm_tdb_jd1, t_trm_tdb_jd2)
+    init_up_pos = target_pos_trm - tx_pos_trm
+    init_up_vel = target_vel_trm - tx_vel_trm
+    init_up_dist = jnp.linalg.norm(init_up_pos, axis=-1)
+    init_lt = init_up_dist / C
+    init_t_bounce_tt_jd2 = t_trm_tt_jd2 + init_lt
+    init_carry = (0, init_t_bounce_tt_jd2, init_t_bounce_tt_jd2 - 1.0, init_up_pos, init_up_vel, init_up_dist,
+                  target_pos_trm, target_vel_trm, init_lt, t_trm_tdb, t_trm)
+
+    # -------------------------------------------------------------------------
+    # Step 3: Solve the fixed-point light-time equation
+    # -------------------------------------------------------------------------
+    _, _, _, up_pos, up_vel, up_dist, target_pos_bounce, target_vel_bounce, final_lt, t_bounce_tdb, t_bounce = jax.lax.while_loop(
+        cond_func,
+        body_func,
+        init_carry)
+    target_state_bounce = State(t_bounce_tdb, target_pos_bounce, target_vel_bounce, BCRS)
+    return LightPath(pos=up_pos, vel=up_vel, dist=up_dist, lt=final_lt, start=tx_state_trm,
+                     end=target_state_bounce), t_bounce
+
+
+def forward_down_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, rx: Site,
+                                       context: LightTimeContext, tx_freq: float,
+                                       tol: float = 1e-14) -> Tuple[LightPath, Time]:
+    """Solve a target-to-receiver light-time path from a fixed bounce epoch.
+
+    Parameters
+    ----------
+    t_bounce_tdb : TDBView
+        Bounce epoch in ``TDB``.
+    target_state_bounce : State
+        Target state at the bounce epoch, in ``BCRS``.
+    rx : Site
+        Receiver site.
+    context : LightTimeContext
+        Delay-model configuration.
+    tx_freq : float
+        Signal frequency in ``Hz``. This is only used when the corona correction is enabled.
+    tol : float, default=1e-14
+        Convergence tolerance for the fixed-point light-time iteration, in days.
+
+    Returns
+    -------
+    tuple[LightPath, Time]
+        Solved down-leg path and receive epoch.
+
+    Notes
+    -----
+    The path starts at the target at bounce time and ends at the receiver at receive time.
+    """
+    sun = context.sun
+    earth = context.earth
+    max_iters = 6
+
+    # -------------------------------------------------------------------------
+    # Step 1: Build the fixed bounce-start geometry
+    # -------------------------------------------------------------------------
+    t_bounce = t_bounce_tdb.time
+    t_bounce_tdb_jd1 = t_bounce_tdb.jd1
+    t_bounce_tdb_jd2 = t_bounce_tdb.jd2
+    t_bounce_tt_jd1 = t_bounce._tt_jd1
+    t_bounce_tt_jd2 = t_bounce._tt_jd2
+    eop = t_bounce.eop
+    gregorian_start = t_bounce.gregorian_start
+    target_pos_bounce = target_state_bounce.pos
+    target_vel_bounce = target_state_bounce.vel
+    rx_state_bounce = rx.state(t_bounce, frame=BCRS, earth=earth)
+    if context.corona_cor_enable:
+        sun_pos_bounce = sun._bcrs_pos_jd(t_bounce_tdb_jd1, t_bounce_tdb_jd2)
+        sun2target_pos_bounce = target_pos_bounce - sun_pos_bounce
+        sun2target_pos_bounce_helio = bcrs_to_heliographic_rotation(sun2target_pos_bounce)
+
+    def body_func(carry):
+        i, cur_t_rec_tt_jd2, prev_t_rec_tt_jd2, *_ = carry
+        t_rec = Time.from_tt_jd(t_bounce_tt_jd1, cur_t_rec_tt_jd2, eop=eop, gregorian_start=gregorian_start)
+        rx_state_rec = rx.state(t_rec, frame=BCRS, earth=earth)
+        rx_pos_rec = rx_state_rec.pos
+        rx_vel_rec = rx_state_rec.vel
+        t_rec_tdb = rx_state_rec.tdb
+        t_rec_tdb_jd1, t_rec_tdb_jd2 = t_rec_tdb.jd1, t_rec_tdb.jd2
+        down_pos = target_pos_bounce - rx_pos_rec
+        down_vel = target_vel_bounce - rx_vel_rec
+        down_dist = jnp.linalg.norm(down_pos, axis=-1)
+        lt_tdb = down_dist / C
+        rel_delay = sum_relativistic_time_delay(
+            context.shapiro_bodies,
+            t_bounce_tdb_jd1, t_bounce_tdb_jd2,
+            target_pos_bounce,
+            t_rec_tdb_jd1, t_rec_tdb_jd2,
+            rx_pos_rec,
+            down_dist
+        )
+        lt_tdb = lt_tdb + rel_delay
+
+        if context.atmos_cor_enable:
+            earth2rx_pos_rec = rx.state(t_rec, frame=GCRS).pos
+            dist_earth2rx_rec = jnp.linalg.norm(earth2rx_pos_rec, axis=-1)
+            cosz = jnp.sum(earth2rx_pos_rec * down_pos, axis=-1) / (
+                    dist_earth2rx_rec * down_dist)
+            atm_delay = atmosphere_time_delay(cosz)
+            lt_tdb = lt_tdb + atm_delay
+
+        if context.corona_cor_enable:
+            sun_pos_rec = sun._bcrs_pos_jd(t_rec_tdb_jd1, t_rec_tdb_jd2)
+            sun2rx_pos_rec = rx_pos_rec - sun_pos_rec
+            sun2rx_pos_rec_helio = bcrs_to_heliographic_rotation(sun2rx_pos_rec)
+            corona_delay = solar_corona_delay(sun2target_pos_bounce_helio, sun2rx_pos_rec_helio, tx_freq)
+            lt_tdb = lt_tdb + corona_delay
+
+        actual_lt_tdb = (t_rec_tdb_jd1 - t_bounce_tdb_jd1) + (t_rec_tdb_jd2 - t_bounce_tdb_jd2)
+        lt_err = lt_tdb - actual_lt_tdb
+        new_t_rec_tt_jd2 = cur_t_rec_tt_jd2 + lt_err
+
+        return (i + 1, new_t_rec_tt_jd2, cur_t_rec_tt_jd2, down_pos, down_vel, down_dist,
+                rx_pos_rec, rx_vel_rec, lt_tdb, t_rec_tdb, t_rec)
+
+    def cond_func(carry):
+        i, cur_t_rec_tt_jd2, prev_t_rec_tt_jd2, *_ = carry
+        err = jnp.max(jnp.abs(cur_t_rec_tt_jd2 - prev_t_rec_tt_jd2), initial=0.)
+        return (err > tol) & (i < max_iters)
+
+    # -------------------------------------------------------------------------
+    # Step 2: Build the initial guess
+    # -------------------------------------------------------------------------
+    init_down_pos = target_pos_bounce - rx_state_bounce.pos
+    init_down_vel = target_vel_bounce - rx_state_bounce.vel
+    init_down_dist = jnp.linalg.norm(init_down_pos, axis=-1)
+    init_lt = init_down_dist / C
+    init_t_rec_tt_jd2 = t_bounce_tt_jd2 + init_lt
+    init_carry = (0, init_t_rec_tt_jd2, init_t_rec_tt_jd2 - 1.0, init_down_pos, init_down_vel, init_down_dist,
+                  rx_state_bounce.pos, rx_state_bounce.vel, init_lt, t_bounce_tdb, t_bounce)
+
+    # -------------------------------------------------------------------------
+    # Step 3: Solve the fixed-point light-time equation
+    # -------------------------------------------------------------------------
+    _, _, _, down_pos, down_vel, down_dist, rx_pos_rec, rx_vel_rec, final_lt, t_rec_tdb, t_rec = jax.lax.while_loop(
+        cond_func,
+        body_func,
+        init_carry)
+    rx_state_rec = State(t_rec_tdb, rx_pos_rec, rx_vel_rec, BCRS)
+    return LightPath(pos=down_pos, vel=down_vel, dist=down_dist, lt=final_lt, start=target_state_bounce,
+                     end=rx_state_rec), t_rec
+
+
 def up_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, tx: Site,
                              context: LightTimeContext, tx_freq: float,
                              tol: float = 1e-14) -> Tuple[LightPath, UTCView]:

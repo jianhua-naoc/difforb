@@ -31,8 +31,9 @@ time-scale rules that connect the observation time to `TDB`.
 
 ## Radar Two-Way Light Time
 
-Radar observations use a two-way light-time solution. The reference epoch is the receive epoch \(t_{\mathrm{r}}\). The
-signal path has a down leg from the target to the receiver and an up leg from the transmitter to the target.[^yeomans]
+Radar observations use a two-way light-time solution. The signal path has a down leg from the target to the receiver and an up leg from the transmitter to the target.[^yeomans] DiffOrb can use either the receive epoch or the transmit epoch as the caller-supplied reference epoch.
+
+When the reference epoch is the receive epoch \(t_{\mathrm{r}}\), DiffOrb solves the path backward from reception.
 
 DiffOrb first solves the down-leg delay:
 
@@ -70,8 +71,9 @@ DiffOrb then solves the up-leg delay:
 + \Delta\tau_{\mathrm{u,tropo}}
 \]
 
-The transmitter and receiver may be the same site for monostatic radar or different sites for bistatic radar. The radar
-delay is the solved round-trip light time.
+When the reference epoch is the transmit epoch \(t_{\mathrm{tx}}\), DiffOrb solves the same two legs forward. It first finds the target bounce epoch from the transmitter-to-target up leg, then finds the receiver epoch from the target-to-receiver down leg.
+
+The transmitter and receiver may be the same site for monostatic radar or different sites for bistatic radar. The radar delay is the solved round-trip light time.
 
 The delay correction terms are applied separately to the down leg and the up leg. Relativistic delay uses the Shapiro
 model.[^shapiro] Solar-corona delay follows the standard solar-corona electron-density
@@ -85,9 +87,7 @@ rules that connect `TDB`, `TT`, `UTC`, and `UT1`.
 Radar Doppler reduction uses the same converged two-way light-time model as radar delay. Traditional formulations often
 write Doppler from analytic expressions for the rates of change of the up-leg and down-leg path lengths.[^yeomans]
 
-DiffOrb instead treats the Doppler shift as the derivative of the converged round-trip delay with respect to the
-receive epoch. This derivative is computed by automatic differentiation. This keeps radar delay and radar Doppler tied
-to the same signal-path model.
+DiffOrb instead treats the Doppler shift as the derivative of the converged round-trip delay with respect to the selected radar reference epoch. This derivative is computed by automatic differentiation. This keeps radar delay and radar Doppler tied to the same signal-path model.
 
 ## Read Next
 
