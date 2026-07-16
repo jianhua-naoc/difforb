@@ -9,13 +9,13 @@ DiffOrb exposes several product families.
 
 - Optical tables give right ascension, declination, topocentric angles, distance, phase angle, elongation, and
   modeled magnitude.
-- Radar tables give delay, Doppler, range, and range rate.
+- Radar tables give two-way delay, Doppler shift, range, range rate, and transmitter and receiver pointing angles.
 - Vector tables give relative target-observer states.
 - Element tables give osculating elements at requested epochs.
 - Apsides tables give periapsis and apoapsis events.
 - Close-approach tables give close-approach epochs, distances, and relative speeds.
 
-## Corrections And References
+## Correction Levels
 
 Vector products can have three correction levels.
 
@@ -31,17 +31,7 @@ The optical apparent level applies more corrections than the vector apparent lev
 deflection by the Sun, stellar aberration, rotation to the true equator and equinox of date, and optional refraction for
 ground observers.[^urban]
 
-Radar products use the two-way light-time model described by Yeomans et al. (1992).[^yeomans] The delay can
-include relativistic delay, solar-corona delay, and tropospheric delay.[^shapiro][^muhleman-anderson][^standish][^urban]
-Radar Doppler is the derivative of the converged two-way delay with respect to the selected radar reference epoch.
-
-Element, apsides, and close-approach products are derived from the propagated target trajectory. They do not apply
-observer light-time corrections.
-
 ## Relation To JPL Horizons
-
-DiffOrb provides Horizons-like optical, radar, vector, element, apsides, and close-approach products. The optical and
-vector products use geometric, astrometric, and apparent concepts in the same broad sense as JPL Horizons.
 
 One difference matters for direct comparison. DiffOrb's Earth-based apparent `RA/Dec` uses the modern equator-of-date
 rotation described in [Earth Rotation And Terrestrial Geometry](earth-rotation-and-terrestrial-geometry.md). JPL
@@ -65,13 +55,6 @@ of-date origin.[^horizons]
 <https://doi.org/10.1103/PhysRevLett.13.789>
 [^urban]: Urban, S. E., & Seidelmann, P. K. (eds.). *Explanatory Supplement to the Astronomical Almanac*, especially
 the chapters on astrometric and apparent place, relativity, and tropospheric delay.
-[^yeomans]: Yeomans, D. K., Campbell, D. B., Chodas, P. W., Giorgini, J. D., & Ostro, S. J. (1992). *Asteroid and
-Comet Orbits Using Radar Data*. The Astronomical Journal, 103(1), 303-317.
-[^muhleman-anderson]: Muhleman, D. O., & Anderson, J. D. (1981). *Solar wind electron densities from Viking
-dual-frequency radio measurements*. The Astrophysical Journal, 247, 1093-1101. NASA NTRS record:
-<https://ntrs.nasa.gov/citations/19810061604>
-[^standish]: Standish, E. M., & Williams, J. G. *Orbital Ephemerides of the Sun, Moon, and Planets*, in *Explanatory
-Supplement to the Astronomical Almanac*, especially Section 8.7.6.
 [^horizons]: JPL Solar System Dynamics. *Horizons System Manual*, especially the sections on Earth true equator and
 equinox of date, apparent `RA/Dec`, and the documented `-53 mas` offset between the legacy `IAU 76/80` and modern
 `IAU 2006/2000A` of-date right-ascension origins. <https://ssd.jpl.nasa.gov/horizons/manual.html>

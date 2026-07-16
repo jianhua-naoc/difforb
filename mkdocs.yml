@@ -125,7 +125,7 @@ nav:
       - Dynamics And Propagation:
           - Configure Force Models And Dynamic Systems: guides/configure-force-models-and-dynamic-systems.md
           - Propagate A SmallBody And Evaluate Dense Trajectories: guides/propagate-a-smallbody-and-evaluate-dense-trajectories.md
-      - Observation Products:
+      - Ephemeris Products:
           - Get Optical Outputs In Observer And Vector Modes: guides/get-optical-outputs-in-observer-and-vector-modes.md
           - Get Radar Outputs In Monostatic And Bistatic Geometry: guides/get-radar-outputs-in-monostatic-and-bistatic-geometry.md
       - Observation Preparation:

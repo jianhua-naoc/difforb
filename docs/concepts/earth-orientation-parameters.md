@@ -21,14 +21,9 @@ correction terms for those residuals; they do not mean that an observed axis its
 - It gives polar-motion coordinates for the `ITRS -> TIRS` step of the `ITRS -> GCRS` transformation.
 - It supplies observed correction terms for the modeled `CIP` coordinates in `GCRS`.
 
-IERS products can publish the `CIP` residual correction in different coordinate forms. Modern `dX` and `dY` values are
-corrections to the modeled `X` and `Y` components of the `CIP` unit vector in `GCRS`.[^iers-c04-dxdy] DiffOrb's default
-C04 file is the `dPsi/dEps` form. In that path, the `dPsi` and `dEps` values from the `EOP` table are added to the
-model nutation angles before the corrected `CIP` vector and the `CIRS <-> GCRS` matrices are built.
-
-Those two forms represent the same correction layer through different coordinates. In DiffOrb's current `dPsi/dEps`
-path, the correction is applied to the nutation-angle variables. At the model level, its role is still to realize the
-observationally corrected `CIP` motion, not to change the precession polynomial by itself.
+DiffOrb uses the C04 `dPsi/dEps` form.[^iers-c04] The `dPsi` and `dEps` values from the `EOP` table are added to the
+model nutation angles before the corrected `CIP` vector and the `CIRS <-> GCRS` matrices are built. Their role is to
+realize the observationally corrected `CIP` motion, not to change the precession polynomial by itself.
 
 ## Coverage And Freshness
 
@@ -77,7 +72,6 @@ as `BCRS` or `GCRS`.
 
 [^iers-conventions]: International Earth Rotation and Reference Systems Service. *IERS Conventions (2010)*, especially
 the sections on Earth orientation, polar motion, and celestial intermediate quantities.
-[^iers-c04]: International Earth Rotation and Reference Systems Service. *Earth Orientation Parameters C04* series.
+[^iers-c04]: International Earth Rotation and Reference Systems Service. *EOP 20 C04 (IAU 2000A, dPsi, dEps), 0h UTC, 1962-now*. <https://datacenter.iers.org/versionMetadata.php?filename=latestVersionMeta%2F236_EOP_C04_20_dPsi_dEps_62-NOW_IAU2000236.txt>
 [^kaplan]: Kaplan, G. H. *The IAU Resolutions on Astronomical Reference Systems, Time Scales, and Earth Rotation Models: Explanation and Implementation*, especially Sections 5.4.4 and 6.5.1.
 [^iers-ch5]: International Earth Rotation and Reference Systems Service. *IERS Conventions (2010)*, Chapter 5, "Transformation between the International Terrestrial Reference System and the Geocentric Celestial Reference System." <https://www.iers.org/IERS/EN/Publications/TechnicalNotes/tn36>
-[^iers-c04-dxdy]: International Earth Rotation and Reference Systems Service. *EOP 14 C04 series of the Earth orientation parameters with respect to IAU 2006/2000A precession/nutation model*. <https://datacenter.iers.org/productMetadata.php?id=221>

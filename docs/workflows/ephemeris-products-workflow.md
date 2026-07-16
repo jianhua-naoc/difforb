@@ -2,7 +2,8 @@
 
 This workflow starts from one fixed orbit for `85472 Xizezong`. It propagates the orbit once. It then uses the same propagated trajectory to make optical, vector, radar, element, and event products.
 
-The last section compares the optical output with JPL Horizons for one target and for a random set of numbered small bodies.
+The final stage compares the optical output with JPL Horizons for the same target and for a fixed sample of `100`
+numbered main-belt asteroids.
 
 ## Prerequisites
 
@@ -296,29 +297,22 @@ ax.set_ylim(0.0, 0.3)
 
 ![Astrometric separation between DiffOrb and JPL Horizons for 85472 Xizezong](../assets/85472-xizezong-optical-vs-horizons.png)
 
-### Compare 100 Numbered Small Bodies
+### Compare 100 Numbered Main-Belt Asteroids
 
-This check draws `100` numbered small bodies with a fixed seed, queries one Horizons `BCRS` Cartesian state for each
-body at the same initial epoch, propagates the whole batch in DiffOrb, and compares the astrometric optical output with
-Horizons.
+This check draws `100` numbered main-belt asteroids with a fixed seed and the `MBA` class from the
+[JPL Small-Body Database](https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html). The numbered-asteroid range is stored with
+the validation run, and the `16` asteroid perturbers represented by `SB441-N16` are excluded. For each target, query one
+Horizons `BCRS` Cartesian state at a common initial epoch, propagate the complete batch in DiffOrb, and compare the
+astrometric optical output with Horizons.
 
-Use one fixed `TDB` initial epoch for all target states. Use one fixed `UTC` grid for the observer ephemerides. The
-observer is Xinglong Station (`327`). The target sample below uses the numbered-asteroid range stored with this
-validation run. If the numbered-asteroid range is refreshed from JPL SBDB, the selected target IDs can change.
+Use one fixed `TDB` initial epoch for all target states and one fixed `UTC` grid for the observer ephemerides. The
+observer is Xinglong Station (`327`).
 
 ```python
 from pathlib import Path
 
-import astropy.units as u
-import matplotlib.pyplot as plt
-import jax.numpy as jnp
-import numpy as np
-from astropy.coordinates import SkyCoord
-from astroquery.jplhorizons import Horizons
+import requests
 from tqdm import tqdm
-
-from difforb.body import Site, SmallBody
-from difforb.core import BCRS, State, Time
 
 target_count = 100
 random_seed = 43
@@ -327,6 +321,31 @@ number_max = 895_910
 excluded_target_ids = {
     1, 2, 3, 4, 7, 10, 15, 16, 31, 52, 65, 87, 88, 107, 511, 704
 }
+
+
+def fetch_orbit_class(target_id):
+    response = requests.get(
+        "https://ssd-api.jpl.nasa.gov/sbdb.api",
+        params={"sstr": str(target_id), "no-orbit": "1"},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()["object"]["orbit_class"]["code"]
+
+
+rng = np.random.default_rng(random_seed)
+selected = set()
+checked = set()
+while len(selected) < target_count:
+    target_id = int(rng.integers(number_min, number_max + 1))
+    if target_id in excluded_target_ids or target_id in checked:
+        continue
+    checked.add(target_id)
+    if fetch_orbit_class(target_id) != "MBA":
+        continue
+    selected.add(target_id)
+
+target_ids = np.array(sorted(selected), dtype=int)
 
 initial_epoch = Time.from_tdb_date(2026, 1, 1)
 initial_epoch_jd = float(np.asarray(initial_epoch.tdb().jd))
@@ -339,15 +358,6 @@ horizons_range = {
     "step": "10d",
 }
 
-rng = np.random.default_rng(random_seed)
-selected = set()
-while len(selected) < target_count:
-    target_id = int(rng.integers(number_min, number_max + 1))
-    if target_id in excluded_target_ids:
-        continue
-    selected.add(target_id)
-
-target_ids = np.array(sorted(selected), dtype=int)
 observer_code = "327"
 observer = Site.from_code(observer_code).require_ground()
 ```
@@ -408,7 +418,9 @@ initial_state = State(
 )
 ```
 
-Create one batched `SmallBody`, propagate it for the full comparison interval, and build one batched optical table. Start the stored trajectory before the first observer epoch so the light-time solve stays inside the propagated interval. The `grid=True` call returns one time series for each target.
+Create one batched `SmallBody`, propagate it over the full comparison interval, and build one batched optical table.
+Start the stored trajectory before the first observer epoch so the light-time solve stays inside the propagated
+interval. The `grid=True` call returns one time series for each target.
 
 ```python
 target_batch = SmallBody.create(initial_state)
@@ -433,8 +445,7 @@ difforb_coord = SkyCoord(
 )
 ```
 
-Query Horizons for the same objects, observer, and `UTC` grid. `id_type="smallbody"` keeps numbered small bodies
-separate from major-body IDs.
+Query Horizons for the same targets, observer, and `UTC` grid.
 
 ```python
 horizons_ra = np.empty((len(target_ids), len(time_offsets)))
@@ -478,14 +489,13 @@ print("MAX_MAS", float(np.max(separation)))
 ```text title="Output"
 TARGETS 100
 EPOCHS 365
-MEDIAN_MAS 0.03903224717521309
-P95_MAS 0.2738868930459874
-P99_MAS 0.48034178172244024
-MAX_MAS 1.0784751105453636
+MEDIAN_MAS 0.039751306486715945
+P95_MAS 0.27954097710283615
+P99_MAS 0.49429578523240236
+MAX_MAS 1.077196629072347
 ```
 
-Plot the epoch-wise percentile envelope and the cumulative distribution of all separations. The full run makes
-`100 x 365` comparisons.
+Plot the epoch-wise percentile envelope and the cumulative distribution of all `100 x 365` separations.
 
 ```python
 years = np.asarray(time_offsets, dtype=float) / 365.25
@@ -513,6 +523,9 @@ ax_cdf.set_xlabel("DiffOrb-Horizons separation [mas]")
 ax_cdf.set_ylabel("cumulative fraction")
 ax_cdf.legend()
 
+for ax in (ax_time, ax_cdf):
+    ax.tick_params(which="both", direction="in", top=True, right=True)
+
 fig.tight_layout()
 
 fig_path = Path("numbered-small-bodies-vs-horizons.png")
@@ -520,11 +533,11 @@ fig.savefig(fig_path, dpi=400)
 print(fig_path)
 ```
 
-![Astrometric separation between DiffOrb and JPL Horizons for 100 numbered small bodies](../assets/numbered-small-bodies-vs-horizons.png)
+![Astrometric separation between DiffOrb and JPL Horizons for 100 numbered main-belt asteroids](../assets/numbered-small-bodies-vs-horizons.png)
 
-This batch comparison is a broad external check. It is not a fixed acceptance test. The result can change when Horizons
-updates an orbit solution, when the random sample changes, or when a different force model, observer, kernel set, or
-numbered-asteroid range is used.
+This batch comparison is a broad external check over the fixed main-belt sample. It is not a fixed acceptance test. The
+result can change when Horizons updates an orbit solution or when a different force model, observer, kernel set, target
+list, or software environment is used.
 
 ## Result
 
@@ -536,8 +549,8 @@ This workflow produces these products from one propagated `SmallBody`:
 - an element table
 - apside and close-approach event tables
 - a Horizons comparison for optical astrometry
-- a 100-target Horizons comparison plot for numbered small bodies
+- a 100-target Horizons comparison plot for numbered main-belt asteroids
 
-The numeric output above used `DE441`, `SB441-N16`, Xinglong Station (`327`), and a fixed random sample of numbered
-small bodies. Small numerical differences can appear across platforms, JAX or XLA versions, dependency versions, and
-Horizons service revisions.
+The numeric output above used `DE441`, `SB441-N16`, Xinglong Station (`327`), `85472 Xizezong`, and the fixed sample of
+`100` numbered main-belt asteroids. Small numerical differences can appear across platforms, JAX or XLA versions,
+dependency versions, and Horizons service revisions.

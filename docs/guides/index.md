@@ -32,7 +32,7 @@ Guides show how to use the common DiffOrb APIs for one task at a time. Use them 
 - [Configure Force Models And Dynamic Systems](configure-force-models-and-dynamic-systems.md): build the standard major-body system, the extended system with asteroid perturbers, or one custom `ForceModel` with explicit gravity and non-gravitational terms.
 - [Propagate A SmallBody And Evaluate Dense Trajectories](propagate-a-smallbody-and-evaluate-dense-trajectories.md): propagate one `SmallBody`, check trajectory coverage, and query interpolated `BCRS` states inside the solved interval.
 
-## Observation Products
+## Ephemeris Products
 
 - [Get Optical Outputs In Observer And Vector Modes](get-optical-outputs-in-observer-and-vector-modes.md): sample observer-mode optical outputs and vector-mode relative states from one propagated target, one observer, and one observation-time grid.
 - [Get Radar Outputs In Monostatic And Bistatic Geometry](get-radar-outputs-in-monostatic-and-bistatic-geometry.md): sample 2025 BC10 radar delay and Doppler predictions at DSS-14 and compare them with JPL radar astrometry records.

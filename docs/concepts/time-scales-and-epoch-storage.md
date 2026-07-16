@@ -16,7 +16,7 @@ DiffOrb keeps this split form through the whole conversion chain. If you exchang
 
 ## Time Scales Used By DiffOrb
 
-In the modern International Astronomical Union (`IAU`) framework, some time scales are uniform atomic or coordinate scales, and some follow the Earth's real rotation.[^iau][^kaplan] DiffOrb follows that split. The current API exposes `TAI`, `TT`, `UTC`, `UT1`, mixed `UT`, and `TDB`. Geocentric Coordinate Time (`TCG`) and Barycentric Coordinate Time (`TCB`) matter in the formal background, but the current API does not expose them as standard `Time` views.
+In the modern International Astronomical Union (`IAU`) framework, some time scales are uniform atomic or coordinate scales, and some follow the Earth's real rotation.[^kaplan] DiffOrb follows that split. The current API exposes `TAI`, `TT`, `UTC`, `UT1`, mixed `UT`, and `TDB`. Geocentric Coordinate Time (`TCG`) and Barycentric Coordinate Time (`TCB`) matter in the formal background, but the current API does not expose them as standard `Time` views.
 
 ### Terrestrial Time
 
@@ -30,7 +30,7 @@ In the modern International Astronomical Union (`IAU`) framework, some time scal
 
 `UTC` is the civil broadcast scale. DiffOrb defines it only for epochs on or after `1962-01-01`. For earlier epochs, use `UT1` instead.
 
-`UTC` started to appear in 1961, but DiffOrb uses `1962-01-01` as the boundary because the high-precision Earth Orientation Parameter (`EOP`) data used for Earth-based timing starts there. This also matches the JPL Horizons convention. Horizons treats observer-table `UT` as `UT1` before `1962-01-01` and as `UTC` on and after `1962-01-01`.
+`UTC` started to appear in 1961, but DiffOrb uses `1962-01-01` as the boundary because the high-precision Earth Orientation Parameter (`EOP`) data used for Earth-based timing starts there. This also matches the JPL Horizons convention. Horizons treats observer-table `UT` as `UT1` before `1962-01-01` and as `UTC` on and after `1962-01-01`.[^horizons-ut]
 
 Before 1972, `UTC` used linear rate adjustments instead of the modern leap-second system. DiffOrb keeps that historical distinction so converted observation times keep the right civil meaning.
 
@@ -38,13 +38,13 @@ Before 1972, `UTC` used linear rate adjustments instead of the modern leap-secon
 
 `UT1` is the Earth-rotation time scale. It follows the actual rotation angle of the Earth and is the `UT` scale used by Earth-rotation geometry.[^kaplan][^iers]
 
-For modern dates, DiffOrb converts between `TT` and `UT1` with `EOP` data. When the needed `EOP` span is not available, it falls back to the historical `Delta T = TT - UT1` polynomial model summarized by Espenak and Meeus.[^deltat]
+DiffOrb converts between `TT` and `UT1` with `EOP` data from the first covered epoch onward. Earlier epochs use the historical `Delta T = TT - UT1` model of Morrison et al.[^morrison]
 
-DiffOrb also exposes a mixed `UT` view. This is a library convention, not an `IAU` standard time scale. It means `UT1` before `1962-01-01` and `UTC` on and after `1962-01-01`.
+DiffOrb also exposes a mixed `UT` view. It means `UT1` before `1962-01-01` and `UTC` on and after `1962-01-01`.
 
 ### Barycentric Dynamical Time
 
-`TDB` is the practical barycentric dynamical scale used for state epochs and ephemeris arguments. It is not the same as `TCB`. It is designed to stay close to `TT` in average rate.[^iau][^kaplan]
+`TDB` is the practical barycentric dynamical scale used for state epochs and ephemeris arguments. It is not the same as `TCB`. It is designed to stay close to `TT` in average rate.[^kaplan]
 
 DiffOrb uses the same practical `TT -> TDB` model as `SOFA` `iauDtdb`.[^sofa] The inverse `TDB -> TT` path is built by fixed-point inversion of that same forward model.
 
@@ -53,14 +53,6 @@ In the topocentric form of the model, `TDB` can depend on observer position. For
 ## Why Time Stores TT While State Uses TDB
 
 These canonical choices serve different jobs. `Time` needs one uniform scale that can connect Earth-based inputs and outputs such as `UTC`, `UT1`, and `EOP` to barycentric dynamical work. `TT` is the bridge for that job. `State` is already a dynamical Cartesian object, so `TDB` is the more natural time scale for its epoch.
-
-## Connections To The Rest Of The Library
-
-[Earth Rotation And Terrestrial Geometry](earth-rotation-and-terrestrial-geometry.md) uses `TT`, `UT1`, and `EOP` together because the `ITRS -> GCRS` transformation depends on both the Earth's real spin and the precession-nutation and frame-bias model.
-
-[Frames And State Representation](frames-and-state-representation.md) starts one layer later. When a Cartesian `State` is transformed between reference frames, its epoch is already handled as `TDB`.
-
-Higher-level objects follow the same split. Ground rows in `Site` start with Earth-based time and Earth rotation. `EphemerisBody`, `SmallBody`, space rows in `Site`, and generic `State` transforms use `TDB` epochs.
 
 ## Read Next
 
@@ -77,8 +69,8 @@ Higher-level objects follow the same split. Ground rows in `Site` start with Ear
 
 ## References
 
-[^iau]: International Astronomical Union. Resolutions adopted at the XXIVth and XXVIth General Assemblies, especially the 1991 and 2000 resolutions on reference systems and time scales. <https://www.iau.org/Iau/Iau/Publications/List-of-Resolutions.aspx>
-[^kaplan]: Kaplan, G. H. *The IAU Resolutions on Astronomical Reference Systems, Time Scales, and Earth Rotation And Terrestrial Geometrys: Explanation and Implementation*, especially the sections on `TT`, `TDB`, `UTC`, and `UT1`.
+[^kaplan]: Kaplan, G. H. (2005). *The IAU Resolutions on Astronomical Reference Systems, Time Scales, and Earth Rotation Models: Explanation and Implementation*, especially the sections on `TT`, `TDB`, `UTC`, and `UT1`. U.S. Naval Observatory Circular 179. <https://aa.usno.navy.mil/publications/Circular_179>
 [^sofa]: Standards of Fundamental Astronomy. *SOFA Tools for Earth Attitude* and *SOFA Time Scale and Calendar Tools*, including the two-part Julian date convention and the practical `iauDtdb` model. <https://www.iausofa.org/>
 [^iers]: International Earth Rotation and Reference Systems Service. *IERS Conventions (2010)*, especially the sections on `UT1`, Earth rotation, and Earth orientation parameters.
-[^deltat]: Espenak, F., & Meeus, J. *Polynomial Expressions for Delta T*. NASA Eclipse Web Site. <https://eclipse.gsfc.nasa.gov/SEhelp/deltatpoly2004.html>
+[^horizons-ut]: JPL Solar System Dynamics. *Horizons System Manual*, quantity 30, "TDB-UT," which defines observer-table `UT` as `UT1` before 1962 and `UTC` from 1962 onward. <https://ssd.jpl.nasa.gov/horizons/manual.html>
+[^morrison]: Morrison, L. V., Stephenson, F. R., Hohenkerk, C. Y., & Zawilski, M. (2021). *Addendum 2020 to 'Measurement of the Earth's rotation: 720 BC to AD 2015'*. Proceedings of the Royal Society A, 477(2246), 20200776. <https://doi.org/10.1098/rspa.2020.0776>
