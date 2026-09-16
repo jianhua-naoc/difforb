@@ -273,14 +273,12 @@ class DCSolver:
             photocenter_correction,
         )
         res_func = partial(measure_model.compute_residuals, force_model=force_model, integrator=integrator)
-        res_jac_func = partial(measure_model.compute_jacobian_with_residuals, force_model=force_model,
-                               integrator=integrator)
 
         init_state_params = init_state.array.squeeze()
         init_model_params = force_model.get_all_estimated_params()
         init_photocenter_params = photocenter_correction.get_estimated_params()
         init_params = jnp.concatenate([init_state_params, init_model_params, init_photocenter_params])
-        weight_array_func = None
+        radar_weights = jnp.asarray(weight_results.radar_weights)
         has_optical_time_uncertainty = np.any(
             np.isfinite(weight_results.optical_time_uncertainties)
             & (weight_results.optical_time_uncertainties != 0.0)
@@ -288,16 +286,27 @@ class DCSolver:
         if has_optical_time_uncertainty:
             base_optical_covariances = jnp.asarray(weight_results.optical_covariances)
             optical_time_uncertainties = jnp.asarray(weight_results.optical_time_uncertainties)
-            radar_weights = jnp.asarray(weight_results.radar_weights)
 
-            def weight_array_func(params):
-                optical_rates = measure_model.compute_optical_rates(params, force_model, integrator)
+            def linearize_func(params):
+                jacobian, residuals, optical_rates = (
+                    measure_model.compute_jacobian_with_residuals_and_optical_rates(
+                        params, force_model, integrator,
+                    )
+                )
                 optical_weight_matrices = build_time_inflated_optical_weight_matrices(
                     base_optical_covariances,
                     optical_time_uncertainties,
                     optical_rates,
                 )
-                return optical_weight_matrices, radar_weights
+                return jacobian, residuals, optical_weight_matrices, radar_weights
+        else:
+            optical_weight_matrices = jnp.asarray(weight_results.optical_weight_matrices)
+
+            def linearize_func(params):
+                jacobian, residuals = measure_model.compute_jacobian_with_residuals(
+                    params, force_model, integrator,
+                )
+                return jacobian, residuals, optical_weight_matrices, radar_weights
 
         model_param_scale = jnp.asarray(force_model.get_all_estimated_param_scales(), dtype=init_state_params.dtype)
         photocenter_param_scale = jnp.asarray(photocenter_correction.get_estimated_param_scales(), dtype=init_state_params.dtype)
@@ -307,12 +316,10 @@ class DCSolver:
         robust_solver = RobustLeastSquares(lsq_solver)
         robust_lsq_result = robust_solver.solve(
             init_params,
-            weight_results,
             compiled_outlier_policy,
             res_func,
-            res_jac_func,
+            linearize_func,
             param_scale=param_scale,
-            weight_array_func=weight_array_func,
             event_handler=event_handler,
             log_detail=log_detail,
             event_logger=event_logger,

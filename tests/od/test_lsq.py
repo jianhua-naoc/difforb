@@ -21,18 +21,6 @@ from difforb.od.outlier.policy import CompiledOutlierPolicy
 from tests.assertions import assert_allclose, assert_array_equal
 
 
-def scalar_weight_result(weights):
-    weights_np = np.asarray(weights, dtype=float)
-    return WeightResult(
-        optical_uncertainties=np.empty((0, 2), dtype=float),
-        radar_uncertainties=1.0 / np.sqrt(weights_np),
-        optical_sources=np.asarray([], dtype=object),
-        radar_sources=np.asarray(["TEST"] * len(weights_np), dtype=object),
-        optical_correlations=np.asarray([], dtype=float),
-        optical_time_uncertainties=np.asarray([], dtype=float),
-    )
-
-
 def scalar_weight_arrays(weights):
     weights_array = jnp.asarray(weights)
     return jnp.zeros((0, 2, 2), dtype=weights_array.dtype), weights_array
@@ -94,15 +82,16 @@ def test_least_squares_solves_linear_model_against_closed_form():
     def residuals(params):
         return design @ params - observed
 
-    def jacobian_with_residuals(params):
-        return design, residuals(params)
+    optical_weights, radar_weights = scalar_weight_arrays(weights)
+
+    def linearize(params):
+        return design, residuals(params), optical_weights, radar_weights
 
     result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
         init_params,
-        scalar_weight_result(weights),
         inlier_mask,
         residuals,
-        jacobian_with_residuals,
+        linearize,
     )
 
     sqrt_weights = jnp.sqrt(weights)
@@ -130,24 +119,28 @@ def test_least_squares_refreshes_dynamic_weights_at_final_parameters():
     def residuals(params):
         return jnp.asarray([params[0] - 1.0])
 
-    def jacobian_with_residuals(params):
-        return jnp.asarray([[1.0]]), residuals(params)
+    evaluated_params = []
 
-    def weight_array_func(params):
-        return jnp.empty((0, 2, 2), dtype=params.dtype), jnp.asarray([1.0 + params[0] * params[0]])
+    def linearize(params):
+        evaluated_params.append(np.asarray(params).copy())
+        return (
+            jnp.asarray([[1.0]]),
+            residuals(params),
+            jnp.empty((0, 2, 2), dtype=params.dtype),
+            jnp.asarray([1.0 + params[0] * params[0]]),
+        )
 
     result = LeastSquares(tol=1.0e-13, max_iter=20).solve(
         init_params,
-        scalar_weight_result(jnp.asarray([1.0])),
         inlier_mask,
         residuals,
-        jacobian_with_residuals,
-        weight_array_func=weight_array_func,
+        linearize,
     )
 
     assert result.converged
     assert_allclose(result.params, jnp.asarray([1.0]), atol=1.0e-9, rtol=0.0)
     assert_allclose(result.radar_weights, jnp.asarray([2.0]), atol=1.0e-9, rtol=0.0)
+    assert_allclose(evaluated_params[-1], result.params, atol=0.0, rtol=0.0)
 
 
 def test_least_squares_uses_optical_correlation_blocks():
@@ -176,15 +169,17 @@ def test_least_squares_uses_optical_correlation_blocks():
     def residuals(params):
         return design @ params - observed
 
-    def jacobian_with_residuals(params):
-        return design, residuals(params)
+    fixed_optical_weights = jnp.asarray(weights.optical_weight_matrices)
+    fixed_radar_weights = jnp.asarray(weights.radar_weights)
+
+    def linearize(params):
+        return design, residuals(params), fixed_optical_weights, fixed_radar_weights
 
     result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
         init_params,
-        weights,
         inlier_mask,
         residuals,
-        jacobian_with_residuals,
+        linearize,
     )
 
     full_weight_matrix = jnp.asarray(
@@ -217,15 +212,16 @@ def test_least_squares_ignores_masked_outlier_rows():
     def residuals(params):
         return design @ params - observed
 
-    def jacobian_with_residuals(params):
-        return design, residuals(params)
+    optical_weights, radar_weights = scalar_weight_arrays(weights)
+
+    def linearize(params):
+        return design, residuals(params), optical_weights, radar_weights
 
     result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
         init_params,
-        scalar_weight_result(weights),
         inlier_mask,
         residuals,
-        jacobian_with_residuals,
+        linearize,
     )
 
     sqrt_weights = jnp.sqrt(jnp.where(inlier_mask, weights, 0.0))
@@ -277,8 +273,10 @@ def test_robust_lsq_events_ignore_structural_padding():
     def residuals(params):
         return design @ params - observed
 
-    def jacobian_with_residuals(params):
-        return design, residuals(params)
+    optical_weights, radar_weights = scalar_weight_arrays(weights)
+
+    def linearize(params):
+        return design, residuals(params), optical_weights, radar_weights
 
     policy = CompiledOutlierPolicy(
         auto_rejecter=None,
@@ -294,10 +292,9 @@ def test_robust_lsq_events_ignore_structural_padding():
 
     RobustLeastSquares(LeastSquares(tol=1.0e-13, max_iter=50)).solve(
         init_params,
-        scalar_weight_result(weights),
         policy,
         residuals,
-        jacobian_with_residuals,
+        linearize,
         event_handler=events.append,
         log_detail="iter",
     )
@@ -319,8 +316,10 @@ def test_robust_lsq_refits_final_mask_when_max_outlier_iterations_reached():
     def residuals(params):
         return design @ params - observed
 
-    def jacobian_with_residuals(params):
-        return design, residuals(params)
+    optical_weights, radar_weights = scalar_weight_arrays(weights)
+
+    def linearize(params):
+        return design, residuals(params), optical_weights, radar_weights
 
     policy = CompiledOutlierPolicy(
         auto_rejecter=Chi2OutlierRejecter().with_observation_structure(n_2d=0, n_1d=4),
@@ -336,10 +335,9 @@ def test_robust_lsq_refits_final_mask_when_max_outlier_iterations_reached():
 
     result = RobustLeastSquares(LeastSquares(tol=1.0e-13, max_iter=50)).solve(
         init_params,
-        scalar_weight_result(weights),
         policy,
         residuals,
-        jacobian_with_residuals,
+        linearize,
     )
 
     assert result.outlier_iter_num == 1
@@ -366,3 +364,39 @@ def test_prior_covariance_reports_rank_deficiency():
     assert not bool(result.valid)
     assert jnp.isinf(result.condition)
     assert jnp.all(jnp.isfinite(result.cov_mat))
+
+
+def test_least_squares_keeps_linearization_weights_during_trials(monkeypatch):
+    import difforb.od.lsq as lsq_module
+
+    linearizations = []
+    trial_params = []
+    original_loss = lsq_module.compute_weighted_lsq_loss
+
+    def linearize(params):
+        radar_weights = jnp.asarray([2.0 + params[0] ** 2])
+        linearizations.append((np.asarray(params).copy(), np.asarray(radar_weights).copy()))
+        return (
+            jnp.asarray([[2.0 * params[0]]]),
+            jnp.asarray([params[0] ** 2 - 1.0]),
+            jnp.empty((0, 2, 2)),
+            radar_weights,
+        )
+
+    def residuals(params):
+        trial_params.append(np.asarray(params).copy())
+        return jnp.asarray([params[0] ** 2 - 1.0])
+
+    def checked_loss(values, optical_weights, radar_weights, mask):
+        assert_allclose(radar_weights, linearizations[-1][1], atol=0.0, rtol=0.0)
+        return original_loss(values, optical_weights, radar_weights, mask)
+
+    monkeypatch.setattr(lsq_module, "compute_weighted_lsq_loss", checked_loss)
+    result = LeastSquares(tol=1.0e-11, max_iter=50).solve(
+        jnp.asarray([0.1]), jnp.asarray([True]), residuals, linearize,
+    )
+    assert result.converged
+    assert trial_params
+    assert len(trial_params) > result.iter_num
+    assert_allclose(result.params, jnp.asarray([1.0]), atol=1.0e-8, rtol=0.0)
+    assert_allclose(linearizations[-1][0], result.params, atol=0.0, rtol=0.0)

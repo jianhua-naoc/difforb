@@ -6,7 +6,6 @@ from jax import Array
 from jaxtyping import Float, Bool, Int
 from typing import Any, Callable, NamedTuple
 
-from difforb.astrometry.weight import WeightResult
 from difforb.core.constants import DAY_S
 from difforb.od.events import SolverEventHandler, SolverEventLogger, SolverLogDetail, make_solver_event_logger
 from difforb.od.outlier.outlier import RejResult
@@ -17,7 +16,15 @@ jax.config.update("jax_enable_x64", True)
 COVARIANCE_RCOND = 1e-12
 STATE_PARAM_COUNT = 6
 STATE_PARAM_SCALE_RCOND = 1e-12
-WeightArrayFunction = Callable[[Float[Array, "N_param"]], tuple[Float[Array, "N_optical 2 2"], Float[Array, "N_radar"]]]
+LinearizationFunction = Callable[
+    [Float[Array, "N_param"]],
+    tuple[
+        Float[Array, "N_flat_obs N_param"],
+        Float[Array, "N_flat_obs"],
+        Float[Array, "N_optical 2 2"],
+        Float[Array, "N_radar"],
+    ],
+]
 
 
 def _scalar_float(value: Any) -> float:
@@ -40,25 +47,23 @@ def _finite_array(value: Any) -> bool:
     return _scalar_bool(jnp.all(jnp.isfinite(value)))
 
 
-def _weight_result_arrays(weight_result: WeightResult) -> tuple[Float[Array, "N_optical 2 2"], Float[Array, "N_radar"]]:
-    """Return JAX weight arrays from one resolved weight result."""
-    return (
-        jnp.asarray(weight_result.optical_weight_matrices),
-        jnp.asarray(weight_result.radar_weights),
-    )
-
-
-def _resolve_weight_arrays(
-        weight_result: WeightResult,
-        weight_array_func: WeightArrayFunction | None,
+def _evaluate_linearization(
         params: Float[Array, "N_param"],
-) -> tuple[Float[Array, "N_optical 2 2"], Float[Array, "N_radar"]]:
-    """Return fixed or parameter-refreshed weight arrays for one linearization point."""
-    if weight_array_func is None:
-        optical_weight_matrices, radar_weights = _weight_result_arrays(weight_result)
-    else:
-        optical_weight_matrices, radar_weights = weight_array_func(params)
-    return jax.lax.stop_gradient(jnp.asarray(optical_weight_matrices)), jax.lax.stop_gradient(jnp.asarray(radar_weights))
+        linearize_func: LinearizationFunction,
+) -> tuple[
+    Float[Array, "N_flat_obs N_param"],
+    Float[Array, "N_flat_obs"],
+    Float[Array, "N_optical 2 2"],
+    Float[Array, "N_radar"],
+]:
+    """Evaluate residuals, their Jacobian, and weights at one parameter vector."""
+    jacobian, residuals, optical_weights, radar_weights = linearize_func(params)
+    return (
+        jacobian,
+        residuals,
+        jax.lax.stop_gradient(jnp.asarray(optical_weights)),
+        jax.lax.stop_gradient(jnp.asarray(radar_weights)),
+    )
 
 
 @jax.jit
@@ -435,8 +440,9 @@ class LeastSquares:
     Convergence is tested in scaled parameter space so mixed state and
     force-model parameters do not share one implicit physical unit.
 
-    If a dynamic weight function is supplied, weights are refreshed once at
-    each linearization point and held fixed during that damping trial search.
+    The linearization callback returns residuals, their Jacobian, and weights
+    together. Weights are refreshed at each linearization point and held fixed
+    during that damping trial search.
     The refreshed weights are treated as constants through
     :func:`jax.lax.stop_gradient`, so the solver follows an iteratively
     reweighted least-squares convention rather than differentiating the weight
@@ -482,10 +488,11 @@ class LeastSquares:
         self.gradient_tol = tol ** 0.5
 
     def solve(self, init_params: Float[Array, "N_param"],
-              weights: WeightResult, inlier_mask: Bool[Array, "N_obs"],
-              res_func: Callable, res_jac_func: Callable,
+              inlier_mask: Bool[Array, "N_flat_obs"],
+              res_func: Callable,
+              linearize_func: LinearizationFunction,
+              *,
               param_scale: Float[Array, "N_param"] | None = None,
-              weight_array_func: WeightArrayFunction | None = None,
               event_handler: SolverEventHandler | None = None,
               log_detail: SolverLogDetail = "iter",
               event_logger: SolverEventLogger | None = None) -> 'LeastSquaresResult':
@@ -496,26 +503,16 @@ class LeastSquares:
         ----------
         init_params : Float[Array, "N_param"]
             Initial parameter vector used as the first linearization point.
-        weights : WeightResult
-            Resolved observation weights. Optical rows are represented by full
-            2-by-2 weight matrices and radar rows by scalar inverse
-            variances.
-        inlier_mask : Bool[Array, "N_obs"]
+        inlier_mask : Bool[Array, "N_flat_obs"]
             Flat inlier mask held fixed during this inner solve.
         res_func : Callable
             Callable returning residuals for one parameter vector.
-        res_jac_func : Callable
-            Callable returning ``(jacobian, residuals)`` for one parameter
-            vector.
+        linearize_func : callable
+            Return (jacobian, residuals, optical_weight_matrices, radar_weights) at one parameter vector. The Jacobian differentiates only the unweighted residuals. Optical weights have shape (N_optical, 2, 2), and radar weights have shape (N_radar,). Fixed and parameter-dependent weights use this same callback; returned weights remain fixed throughout each damping trial search.
         param_scale : Float[Array, "N_param"] or None, optional
             Characteristic scales for all parameters. If omitted, all
             non-state parameters use unit scale; the first six state parameters
             still use automatic weighted Jacobian column-norm scaling.
-        weight_array_func : callable or None, optional
-            Optional function that returns ``(optical_weight_matrices,
-            radar_weights)`` for the current parameter vector. Returned weights
-            are refreshed once per linearization point and held fixed through
-            the damping trial search.
         event_handler : SolverEventHandler or None, optional
             Optional callback that receives structured progress events. The
             solver is quiet when this is omitted.
@@ -541,8 +538,9 @@ class LeastSquares:
         last_relative_step_norm = jnp.asarray(jnp.inf, dtype=init_params.dtype)
         for i in range(self.max_iter):
             # 1. Calculate residuals and Jacobian matrix
-            jac, residuals = res_jac_func(cur_param)
-            optical_weight_matrices, radar_weights = _resolve_weight_arrays(weights, weight_array_func, cur_param)
+            jac, residuals, optical_weight_matrices, radar_weights = _evaluate_linearization(
+                cur_param, linearize_func,
+            )
             cur_rms = compute_normalized_residual_rms(residuals, optical_weight_matrices, radar_weights, inlier_mask)
             if i == 0 and logger.enabled("lsq_start"):
                 n_inlier_residuals = _scalar_int(jnp.sum(inlier_mask))
@@ -580,7 +578,8 @@ class LeastSquares:
                         "info",
                         damping=_scalar_float(trial_damping),
                     )
-                delta_param = solve_normal_equation(jac, -residuals, optical_weight_matrices, radar_weights, inlier_mask, trial_damping,
+                delta_param = solve_normal_equation(jac, -residuals, optical_weight_matrices, radar_weights, inlier_mask,
+                                                    trial_damping,
                                                     damping_diag, step_param_scale)
                 new_param = cur_param + delta_param
                 new_residuals = res_func(new_param)
@@ -651,8 +650,9 @@ class LeastSquares:
         else:
             iter_num = self.max_iter
 
-        jac, residuals = res_jac_func(cur_param)
-        optical_weight_matrices, radar_weights = _resolve_weight_arrays(weights, weight_array_func, cur_param)
+        jac, residuals, optical_weight_matrices, radar_weights = _evaluate_linearization(
+            cur_param, linearize_func,
+        )
         rms = compute_normalized_residual_rms(residuals, optical_weight_matrices, radar_weights, inlier_mask)
         converged = termination_reason in ("gradient_converged", "step_converged")
         cov_result = compute_prior_covariance(jac, optical_weight_matrices, radar_weights, inlier_mask)
@@ -716,17 +716,19 @@ class RobustLeastSquares:
         self.solver = solver
 
     def solve(self, init_param: Float[Array, "N_param"],
-              weights: WeightResult, compiled_outlier_policy: CompiledOutlierPolicy,
-              res_func: Callable, res_jac_func: Callable,
+              compiled_outlier_policy: CompiledOutlierPolicy,
+              res_func: Callable,
+              linearize_func: LinearizationFunction,
+              *,
               param_scale: Float[Array, "N_param"] | None = None,
-              weight_array_func: WeightArrayFunction | None = None,
               event_handler: SolverEventHandler | None = None,
               log_detail: SolverLogDetail = "iter",
               event_logger: SolverEventLogger | None = None) -> RobustResult:
-        """Solve with fixed-point alternation between least squares and rejection."""
+        """Solve with fixed-point alternation between least squares and rejection.
+
+        The required linearize_func has the same contract as in LeastSquares.solve. Every inner solve, including a final refit after a mask change, obtains residuals, their Jacobian, and weights through this callback.
+        """
         logger = event_logger if event_logger is not None else make_solver_event_logger(event_handler, log_detail)
-        optical_weight_matrices, radar_weights = _resolve_weight_arrays(weights, weight_array_func, init_param)
-        metric_dtype = jnp.result_type(init_param, optical_weight_matrices, radar_weights)
         cur_param = init_param
         cur_flat_inlier_mask = compiled_outlier_policy.get_init_mask()
         total_lsq_iter_num = 0
@@ -734,6 +736,11 @@ class RobustLeastSquares:
         mask_changed_after_last_lsq = False
 
         def unavailable_rej_result(flat_inlier_mask):
+            # Reuse solved arrays to infer the dtype without evaluating the model.
+            metric_dtype = init_param.dtype if lsq_result is None else jnp.result_type(
+                init_param, lsq_result.residuals,
+                lsq_result.optical_weight_matrices, lsq_result.radar_weights,
+            )
             n_obs = compiled_outlier_policy.n_2d + compiled_outlier_policy.n_1d
             return RejResult(flat_inlier_mask, jnp.full((n_obs,), jnp.nan, dtype=metric_dtype))
 
@@ -760,9 +767,8 @@ class RobustLeastSquares:
                     observation_count=observation_count,
                 )
             # 1. Run lsq solver
-            lsq_result = self.solver.solve(cur_param, weights, cur_flat_inlier_mask, res_func, res_jac_func,
+            lsq_result = self.solver.solve(cur_param, cur_flat_inlier_mask, res_func, linearize_func,
                                            param_scale=param_scale,
-                                           weight_array_func=weight_array_func,
                                            event_logger=iteration_logger.bind(lsq_solve=i + 1))
             optical_weight_matrices = lsq_result.optical_weight_matrices
             radar_weights = lsq_result.radar_weights
@@ -855,9 +861,8 @@ class RobustLeastSquares:
                 # The last allowed rejection pass changed the mask. Refit once with
                 # that final mask so returned parameters, residuals, and metrics are
                 # aligned even though no further rejection pass is permitted.
-                lsq_result = self.solver.solve(cur_param, weights, cur_flat_inlier_mask, res_func, res_jac_func,
+                lsq_result = self.solver.solve(cur_param, cur_flat_inlier_mask, res_func, linearize_func,
                                                param_scale=param_scale,
-                                               weight_array_func=weight_array_func,
                                                event_logger=logger.bind(lsq_solve=compiled_outlier_policy.max_iters + 1))
                 optical_weight_matrices = lsq_result.optical_weight_matrices
                 radar_weights = lsq_result.radar_weights
@@ -869,7 +874,8 @@ class RobustLeastSquares:
                     final_rej_result = RejResult(cur_flat_inlier_mask, metric_result.metric)
                 else:
                     final_rej_result = unavailable_rej_result(cur_flat_inlier_mask)
-            done_logger = logger.bind(outlier_iteration=compiled_outlier_policy.max_iters, lsq_solve=compiled_outlier_policy.max_iters)
+            done_logger = logger.bind(outlier_iteration=compiled_outlier_policy.max_iters,
+                                      lsq_solve=compiled_outlier_policy.max_iters)
             if done_logger.enabled("outlier_done"):
                 _, observation_count, inlier_count, outlier_count = observation_mask_counts(final_rej_result.flat_inlier_mask)
                 done_logger.emit(

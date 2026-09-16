@@ -130,8 +130,18 @@ class AstrometryMeasurementModel(NamedTuple):
             photocenter_correction=photocenter_correction,
         )
 
-    def compute_residuals_core(self, params: Float[Array, "N_param"], force_model: ForceModel, integrator:
-    NumericalIntegrator) -> tuple[Float[Array, "N_flat_obs"], Float[Array, "N_flat_obs"]]:
+    def _compute_residuals_with_aux(
+            self,
+            params: Float[Array, "N_param"],
+            force_model: ForceModel,
+            integrator: NumericalIntegrator,
+            *,
+            include_optical_rates: bool,
+    ) -> tuple[
+        Float[Array, "N_flat_obs"],
+        tuple[Float[Array, "N_flat_obs"], Float[Array, "N_optical_obs 2"] | None],
+    ]:
+        """Evaluate residuals and optional rates from one propagated trajectory."""
         sun, earth = self.sun, self.earth
         optical_context = LightTimeContext(sun=sun, earth=earth, shapiro_bodies=self.shapiro_bodies)
         radar_context = LightTimeContext(sun=sun, earth=earth, atmos_cor_enable=True, corona_cor_enable=True,
@@ -165,7 +175,21 @@ class AstrometryMeasurementModel(NamedTuple):
         flat_rad_residuals = self.radar_values - flat_rad_pred
         flat_residuals = jnp.concatenate([flat_opt_residuals, flat_rad_residuals])
 
-        return flat_residuals, flat_residuals
+        optical_rates = None
+        if include_optical_rates:
+            # These rates are auxiliary values, not additional residuals.
+            optical_rates = _sky_plane_rates(
+                jax.lax.stop_gradient(bent_pos),
+                jax.lax.stop_gradient(astro_path.vel),
+            )
+        return flat_residuals, (flat_residuals, optical_rates)
+
+    def compute_residuals_core(self, params: Float[Array, "N_param"], force_model: ForceModel, integrator:
+    NumericalIntegrator) -> tuple[Float[Array, "N_flat_obs"], Float[Array, "N_flat_obs"]]:
+        residuals, _ = self._compute_residuals_with_aux(
+            params, force_model, integrator, include_optical_rates=False,
+        )
+        return residuals, residuals
 
     def _target_and_photocenter(
             self,
@@ -219,6 +243,52 @@ class AstrometryMeasurementModel(NamedTuple):
         wrapped_residual_func = partial(self.compute_residuals_core, integrator=integrator, force_model=force_model)
         jac, flat_residuals = jax.jacfwd(wrapped_residual_func, has_aux=True)(params)
         return jac, flat_residuals
+
+    @eqx.filter_jit
+    def compute_jacobian_with_residuals_and_optical_rates(
+            self,
+            params: Float[Array, "N_param"],
+            force_model: ForceModel,
+            integrator: NumericalIntegrator,
+    ) -> tuple[
+        Float[Array, "N_flat_obs N_param"],
+        Float[Array, "N_flat_obs"],
+        Float[Array, "N_optical_obs 2"],
+    ]:
+        """Return the residual Jacobian, residuals, and optical rates together.
+
+        Parameters
+        ----------
+        params : Array, shape (N_param,)
+            BCRS initial position and velocity in au and au/day, followed by estimated force-model and photocenter parameters.
+        force_model : ForceModel
+            Force model used for numerical propagation.
+        integrator : NumericalIntegrator
+            Integrator used for numerical propagation.
+
+        Returns
+        -------
+        jacobian : Array, shape (N_flat_obs, N_param)
+            Derivatives of the unweighted residuals with respect to the parameters.
+        residuals : Array, shape (N_flat_obs,)
+            Optical residuals in radians followed by radar residuals in their native units.
+        optical_rates : Array, shape (N_optical_obs, 2)
+            Tangent-plane rates in radians per day, ordered as (ra_dot_cos_dec, dec_dot).
+
+        Notes
+        -----
+        Rates reuse the propagated trajectory and corrected optical path. They are auxiliary values with stopped gradients, so this method differentiates only the residuals.
+        """
+        core_func = partial(
+            self._compute_residuals_with_aux,
+            force_model=force_model,
+            integrator=integrator,
+            include_optical_rates=True,
+        )
+        jacobian, (residuals, optical_rates) = jax.jacfwd(
+            core_func, has_aux=True,
+        )(params)
+        return jacobian, residuals, optical_rates
 
     @eqx.filter_jit
     def compute_optical_rates(

@@ -253,3 +253,21 @@ def test_measurement_model_applies_debias_and_photocenter_mask(default_ephemeris
 
     assert_array_equal(model.optical_photocenter_mask, jnp.asarray([True, False]))
     assert_allclose(residuals[:4], jnp.zeros(4), atol=2.0e-12, rtol=0.0)
+
+
+def test_measurement_model_joint_linearization_matches_separate_evaluations(default_ephemeris):
+    sun, earth, force_model, integrator, data, state = mixed_prediction_case(default_ephemeris)
+    model = build_model(data, state, sun, earth)
+    params = state.array.squeeze()
+
+    expected_jacobian, expected_residuals = model.compute_jacobian_with_residuals(
+        params, force_model, integrator,
+    )
+    expected_rates = model.compute_optical_rates(params, force_model, integrator)
+    jacobian, residuals, rates = model.compute_jacobian_with_residuals_and_optical_rates(
+        params, force_model, integrator,
+    )
+
+    assert_allclose(jacobian, expected_jacobian, rtol=1.0e-12, atol=1.0e-14)
+    assert_allclose(residuals, expected_residuals, rtol=1.0e-12, atol=1.0e-14)
+    assert_allclose(rates, expected_rates, rtol=1.0e-12, atol=1.0e-14)
