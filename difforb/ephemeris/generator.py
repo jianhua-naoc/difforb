@@ -5,7 +5,6 @@ This module wraps the single-case builders in :mod:`difforb.ephemeris.core` and 
 
 from functools import partial
 
-import warnings
 from jax import Array
 from jaxtyping import Float
 import equinox as eqx
@@ -24,18 +23,11 @@ from difforb.ephemeris.core import (OpticalTable, RadarTable, VectorTable,
 from difforb.core.batch import safe_dispatch, safe_cartesian_dispatch
 from difforb.report.text import build_repr, format_shape
 
-warnings.filterwarnings(
-    "ignore",
-    message=r".*A JAX array is being set as static!.*",
-    category=UserWarning,
-)
-
-
 class EphemerisGenerator(eqx.Module):
     """High-level generator for ephemeris tables."""
     target: SmallBody
-    sun: EphemerisBody = eqx.field(static=True)
-    earth: EphemerisBody = eqx.field(static=True)
+    sun: EphemerisBody
+    earth: EphemerisBody
 
     def __init__(self, target: SmallBody):
         """Initialize the ephemeris generator.
@@ -44,6 +36,10 @@ class EphemerisGenerator(eqx.Module):
         ----------
         target : SmallBody
             Target body with the propagated trajectory.
+
+        Notes
+        -----
+        The Sun and Earth use the registered default ephemeris. Their arrays are dynamic PyTree leaves. For explicit device placement, place the generator and the query inputs together using ``jax.device_put`` on their array leaves; the target trajectory alone does not select placement for the other inputs.
         """
         self.target = target
         self.sun = EphemerisBody('sun')

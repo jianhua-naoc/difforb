@@ -140,6 +140,48 @@ BCRS
 
 The values match the direct trajectory interpolation. The difference is that `body.state(...)` returns a `State` object.
 
+## Select an execution device
+
+Pass a JAX device to place the propagation inputs, including force-model and ephemeris arrays, on that device. The numerical model remains FP64. The following uses a CPU and also runs on a Mac; use `jax.devices("cuda")[0]` in a Linux environment with a working JAX CUDA installation to select an NVIDIA GPU.
+
+```python
+import equinox as eqx
+import jax
+
+device = jax.devices("cpu")[0]
+body_on_device = body.propagate(
+    t0.tdb(), t_end.tdb(), force_model, integrator, device=device,
+)
+
+# Query inputs must use placement consistent with the trajectory.
+arrays, metadata = eqx.partition(inside.tdb(), eqx.is_array)
+query_on_device = eqx.combine(jax.device_put(arrays, device), metadata)
+state_on_device = body_on_device.state(query_on_device)
+
+assert state_on_device.pos.dtype.name == "float64"
+assert state_on_device.pos.devices() == {device}
+```
+
+The original body and force model retain their arrays. Omitting `device` preserves the existing JAX placement behavior. No precision conversion or automatic transfer of subsequent query inputs is performed.
+
+Propagation remains compatible with `jit`, `jacfwd`, and `jvp`. Capture the device in a closure or treat it as a static argument when compiling an enclosing function. Place the enclosing function's inputs consistently: an inner `device` argument does not override the enclosing computation's placement constraints. CPU and CUDA results should be compared with numerical tolerances, rather than requiring bitwise equality.
+
+For ephemeris tables, also place the generator's Sun and Earth arrays and the query inputs on that device. `EphemerisGenerator` uses the registered default ephemeris and has no separate device option.
+
+```python
+from difforb.body.site import Site
+from difforb.ephemeris.generator import EphemerisGenerator
+
+generator = EphemerisGenerator(body_on_device)
+observer = Site.from_code("568").require_ground()
+arrays, metadata = eqx.partition((generator, inside, observer), eqx.is_array)
+generator, query, observer = eqx.combine(jax.device_put(arrays, device), metadata)
+table = generator.optical_table(query, observer)
+
+assert table.astrometric_ra.dtype.name == "float64"
+assert table.astrometric_ra.devices() == {device}
+```
+
 ## Common Mistakes
 
 - `body.trajectory` is `None` until you call `propagate(...)`.

@@ -186,15 +186,15 @@ def compute_radar_obs_single(t_rec: Time, rx: Site, tx: Site, tx_freq: float,
         # -------------------------------------------------------------------------
         up_sol, t_trm = up_leg_light_time_single(t_bounce_tdb, target_state_bounce, tx, context, tx_freq, 1e-16)
         total_light_time = (t_rec_local._tt_jd1 - t_trm._tt_jd1) + (t_rec_local._tt_jd2 - t_trm._tt_jd2)
-        aux = jax.lax.stop_gradient((up_sol, down_sol))
-        return total_light_time, aux
+        return total_light_time, (up_sol, down_sol)
 
     t_rec_tt_jd1 = t_rec._tt_jd1
     t_rec_tt_jd2 = t_rec._tt_jd2
 
     # Differentiate with respect to ``jd2`` only. ``jd1`` stays fixed.
 
-    (delay_day, aux_data), (d_delay, _) = jax.jvp(_core_delay_model, (t_rec_tt_jd2,), (1.0,))
+    # Keep path derivatives available to outer transforms without returning their time tangents.
+    delay_day, d_delay, aux_data = jax.jvp(_core_delay_model, (t_rec_tt_jd2,), (1.0,), has_aux=True)
     up_path, down_path = aux_data
 
     delay_us = delay_day * DAY_S * 1e6
@@ -268,12 +268,11 @@ def compute_radar_obs_transmit_single(t_trm: Time, rx: Site, tx: Site, tx_freq: 
         # -------------------------------------------------------------------------
         down_sol, t_rec = forward_down_leg_light_time_single(up_sol.end.tdb, up_sol.end, rx, context, tx_freq, 1e-16)
         total_light_time = (t_rec._tt_jd1 - t_trm_local._tt_jd1) + (t_rec._tt_jd2 - t_trm_local._tt_jd2)
-        aux = jax.lax.stop_gradient((up_sol, down_sol))
-        return total_light_time, aux
+        return total_light_time, (up_sol, down_sol)
 
     t_trm_tt_jd1 = t_trm._tt_jd1
     t_trm_tt_jd2 = t_trm._tt_jd2
-    (delay_day, aux_data), (d_delay, _) = jax.jvp(_core_delay_model, (t_trm_tt_jd2,), (1.0,))
+    delay_day, d_delay, aux_data = jax.jvp(_core_delay_model, (t_trm_tt_jd2,), (1.0,), has_aux=True)
     up_path, down_path = aux_data
 
     delay_us = delay_day * DAY_S * 1e6

@@ -5,6 +5,7 @@ This module defines :class:`SmallBody`, which stores the initial orbit of a smal
 
 from typing import Union, Optional
 
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jax import Array
@@ -13,6 +14,7 @@ from jaxtyping import Float
 from difforb.astrometry.reduction.photometry import MagModel
 from difforb.body.ephbody import EphemerisBody
 from difforb.core.batch import BatchableObject
+from difforb.core.device import put_arrays
 from difforb.core.element import KepElement
 from difforb.core.state.frame import BCRS, Frame
 from difforb.core.state.origins import Origin
@@ -134,7 +136,8 @@ class SmallBody(BatchableObject):
         return self.orbit0.shape
 
     def propagate(self, t_start: TDBView, t_end: TDBView, force_model: ForceModel,
-                  integrator: NumericalIntegrator, grid: bool = False) -> 'SmallBody':
+                  integrator: NumericalIntegrator, grid: bool = False, *,
+                  device: jax.Device | None = None) -> 'SmallBody':
         """Propagate the orbit and store the trajectory interpolator.
 
         Parameters
@@ -147,22 +150,36 @@ class SmallBody(BatchableObject):
             Numerical integrator used to build the trajectory.
         grid : bool, default=False
             If ``True``, use the Cartesian product of the body batch and the time batch. If ``False``, use point-wise broadcasting.
+        device : jax.Device or None, optional
+            Device on which to place the propagation inputs. If omitted, preserve their existing placement. Floating-point precision remains unchanged; propagation uses the existing ``float64`` numerical model.
 
         Returns
         -------
         SmallBody
-            New object with the ``trajectory`` field set.
+            New object with the ``trajectory`` field set. When ``device`` is supplied, the dynamic arrays of its initial state and photometric model are also placed on that device. The original body and force model are not modified.
 
         Raises
         ------
         TypeError
-            If ``t_start`` or ``t_end`` is not a :class:`TDB` epoch.
+            If ``t_start`` or ``t_end`` is not a :class:`TDBView`, or ``device`` is neither a JAX device nor ``None``.
+
+        Notes
+        -----
+        Device placement preserves JIT and forward-mode differentiation. Treat ``device`` as static when using an enclosing JIT; the enclosing computation controls overall execution placement. This option does not override its placement constraints. Place subsequent query times and other inputs consistently with the returned trajectory; evaluation does not perform automatic device transfers.
         """
         validate_timeview(t_start, TDBView, 't_start')
         validate_timeview(t_end, TDBView, 't_end')
-        trajectory = integrator(force_model, self.orbit0.array, self.orbit0.tdb.jd1, self.orbit0.tdb.jd2,
-                                t_start.jd1, t_start.jd2, t_end.jd1, t_end.jd2, grid)
-        return eqx.tree_at(lambda smallbody: smallbody.trajectory, self, trajectory, is_leaf=lambda x: x is None)
+        if device is not None and not isinstance(device, jax.Device):
+            raise TypeError("`device` must be a jax.Device or None.")
+
+        # Repropagation replaces the dense solution; do not transfer the old one.
+        body = eqx.tree_at(lambda b: b.trajectory, self, None, is_leaf=lambda x: x is None)
+        bounds = (t_start.jd1, t_start.jd2, t_end.jd1, t_end.jd2)
+        if device is not None:
+            body, force_model, integrator, bounds = put_arrays((body, force_model, integrator, bounds), device)
+        trajectory = integrator(force_model, body.orbit0.array, body.orbit0.tdb.jd1, body.orbit0.tdb.jd2,
+                                *bounds, grid)
+        return eqx.tree_at(lambda b: b.trajectory, body, trajectory, is_leaf=lambda x: x is None)
 
     @eqx.filter_jit
     def _bcrs_pv_jd(
@@ -238,7 +255,7 @@ class SmallBody(BatchableObject):
         # -------------------------------------------------------------------------
         # Step 3: Broadcast the epoch and build the canonical ``BCRS`` state
         # -------------------------------------------------------------------------
-        body_shape = self.orbit0.shape
+        body_shape = self.trajectory.shape
         time_shape = tdb.shape
         if not grid:
             target_shape = jnp.broadcast_shapes(body_shape, time_shape)
