@@ -27,15 +27,28 @@ Many DiffOrb objects are JAX and Equinox PyTrees. A PyTree object has two kinds 
 
 - PyTree leaves are data fields. JAX can map over them. In DiffOrb, they are usually arrays, such as times, positions,
   velocities, or computed values.
-- Static fields are settings. JAX does not map over them. Examples include frame labels, ephemeris settings, solver
-  settings, and policy objects.
+- Static fields are settings. JAX does not map over them. Examples include frame labels, solver settings, and policy
+  switches.
 
-During batch dispatch, DiffOrb maps over PyTree leaves, not static fields.
+Dynamic data can either vary across a batch or be shared by all its cases. `Time.eop` is shared dynamic data: its Earth
+Orientation Parameter (EOP) arrays describe one reference table, rather than one row per observation. They participate
+in JIT compilation and device placement, but DiffOrb does not slice them, broadcast them across the batch, or add batch
+axes when returning a result. This also applies when a time is nested inside a state or ephemeris table. Different
+inputs can retain different EOP tables.
+
+DiffOrb fields declare this shared role with `eqx.field(metadata={"batch_shared": True})`. Unmarked fields retain the
+ordinary batch rules. The declaration applies to the complete field subtree and does not depend on its array sizes;
+an EOP table stays shared even when its length happens to equal the number of observations. A shared output must not
+depend on the mapped batch coordinate.
+
+This is a DiffOrb dispatch convention. A direct `jax.vmap` or `eqx.filter_vmap` call does not read the field metadata;
+such calls need explicit `in_axes` and `out_axes` that leave shared subtrees unmapped. Ordinary JAX tree operations
+still visit every dynamic leaf, including EOP arrays.
 
 ### PyTree Object Shape
 
-A PyTree object's `.shape` is defined by its PyTree leaves. It tells how many cases are stored in the object. It does
-not include component axes inside one case.
+A PyTree object's `.shape` describes its batch data. It tells how many cases are stored in the object. It does not
+include component axes inside one case or dimensions of shared reference data.
 
 For a `State`, `pos` and `vel` include the Cartesian component axis. If `pos.shape == (N, 3)`, the final `3` stores
 `x, y, z` for one state, and `state.shape` is `(N,)`. For a higher-level object, such as a small body or an observer

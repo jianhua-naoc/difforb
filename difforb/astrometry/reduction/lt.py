@@ -679,7 +679,8 @@ def forward_up_leg_light_time_single(t_trm: Time, tx: Site, target: SmallBody,
         new_t_bounce_tt_jd2 = cur_t_bounce_tt_jd2 + lt_err
 
         return (i + 1, new_t_bounce_tt_jd2, cur_t_bounce_tt_jd2, up_pos, up_vel, up_dist,
-                target_pos_bounce, target_vel_bounce, lt_tdb, t_bounce_tdb, t_bounce)
+                target_pos_bounce, target_vel_bounce, lt_tdb, t_bounce_tdb.jd1, t_bounce_tdb.jd2,
+                t_bounce._tt_jd1, t_bounce._tt_jd2)
 
     def cond_func(carry):
         i, cur_t_bounce_tt_jd2, prev_t_bounce_tt_jd2, *_ = carry
@@ -696,15 +697,18 @@ def forward_up_leg_light_time_single(t_trm: Time, tx: Site, target: SmallBody,
     init_lt = init_up_dist / C
     init_t_bounce_tt_jd2 = t_trm_tt_jd2 + init_lt
     init_carry = (0, init_t_bounce_tt_jd2, init_t_bounce_tt_jd2 - 1.0, init_up_pos, init_up_vel, init_up_dist,
-                  target_pos_trm, target_vel_trm, init_lt, t_trm_tdb, t_trm)
+                  target_pos_trm, target_vel_trm, init_lt, t_trm_tdb.jd1, t_trm_tdb.jd2,
+                  t_trm._tt_jd1, t_trm._tt_jd2)
 
     # -------------------------------------------------------------------------
     # Step 3: Solve the fixed-point light-time equation
     # -------------------------------------------------------------------------
-    _, _, _, up_pos, up_vel, up_dist, target_pos_bounce, target_vel_bounce, final_lt, t_bounce_tdb, t_bounce = jax.lax.while_loop(
-        cond_func,
-        body_func,
-        init_carry)
+    # Keep shared EOP outside the batched loop; retain the dates used for the last geometry evaluation.
+    (_, _, _, up_pos, up_vel, up_dist, target_pos_bounce, target_vel_bounce, final_lt,
+     final_tdb_jd1, final_tdb_jd2, final_tt_jd1, final_tt_jd2) = jax.lax.while_loop(
+        cond_func, body_func, init_carry)
+    t_bounce = eqx.tree_at(lambda t: (t._tt_jd1, t._tt_jd2), t_trm, (final_tt_jd1, final_tt_jd2))
+    t_bounce_tdb = TDBView(final_tdb_jd1, final_tdb_jd2, t_bounce)
     target_state_bounce = State(t_bounce_tdb, target_pos_bounce, target_vel_bounce, BCRS)
     return LightPath(pos=up_pos, vel=up_vel, dist=up_dist, lt=final_lt, start=tx_state_trm,
                      end=target_state_bounce), t_bounce
@@ -803,7 +807,8 @@ def forward_down_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounc
         new_t_rec_tt_jd2 = cur_t_rec_tt_jd2 + lt_err
 
         return (i + 1, new_t_rec_tt_jd2, cur_t_rec_tt_jd2, down_pos, down_vel, down_dist,
-                rx_pos_rec, rx_vel_rec, lt_tdb, t_rec_tdb, t_rec)
+                rx_pos_rec, rx_vel_rec, lt_tdb, t_rec_tdb.jd1, t_rec_tdb.jd2,
+                t_rec._tt_jd1, t_rec._tt_jd2)
 
     def cond_func(carry):
         i, cur_t_rec_tt_jd2, prev_t_rec_tt_jd2, *_ = carry
@@ -819,15 +824,18 @@ def forward_down_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounc
     init_lt = init_down_dist / C
     init_t_rec_tt_jd2 = t_bounce_tt_jd2 + init_lt
     init_carry = (0, init_t_rec_tt_jd2, init_t_rec_tt_jd2 - 1.0, init_down_pos, init_down_vel, init_down_dist,
-                  rx_state_bounce.pos, rx_state_bounce.vel, init_lt, t_bounce_tdb, t_bounce)
+                  rx_state_bounce.pos, rx_state_bounce.vel, init_lt, t_bounce_tdb.jd1, t_bounce_tdb.jd2,
+                  t_bounce._tt_jd1, t_bounce._tt_jd2)
 
     # -------------------------------------------------------------------------
     # Step 3: Solve the fixed-point light-time equation
     # -------------------------------------------------------------------------
-    _, _, _, down_pos, down_vel, down_dist, rx_pos_rec, rx_vel_rec, final_lt, t_rec_tdb, t_rec = jax.lax.while_loop(
-        cond_func,
-        body_func,
-        init_carry)
+    # Keep shared EOP outside the batched loop; retain the dates used for the last geometry evaluation.
+    (_, _, _, down_pos, down_vel, down_dist, rx_pos_rec, rx_vel_rec, final_lt,
+     final_tdb_jd1, final_tdb_jd2, final_tt_jd1, final_tt_jd2) = jax.lax.while_loop(
+        cond_func, body_func, init_carry)
+    t_rec = eqx.tree_at(lambda t: (t._tt_jd1, t._tt_jd2), t_bounce, (final_tt_jd1, final_tt_jd2))
+    t_rec_tdb = TDBView(final_tdb_jd1, final_tdb_jd2, t_rec)
     rx_state_rec = State(t_rec_tdb, rx_pos_rec, rx_vel_rec, BCRS)
     return LightPath(pos=down_pos, vel=down_vel, dist=down_dist, lt=final_lt, start=target_state_bounce,
                      end=rx_state_rec), t_rec
@@ -925,8 +933,8 @@ def up_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, 
 
         new_t_trm_tt_jd2 = cur_t_trm_tt_jd2 - lt_err
 
-        return (i + 1, new_t_trm_tt_jd2, cur_t_trm_tt_jd2, up_pos, up_vel, up_dist, tx_pos_trm, tx_vel_trm, lt_tdb, t_trm_tdb,
-                t_trm)
+        return (i + 1, new_t_trm_tt_jd2, cur_t_trm_tt_jd2, up_pos, up_vel, up_dist, tx_pos_trm, tx_vel_trm, lt_tdb, t_trm_tdb.jd1, t_trm_tdb.jd2,
+                t_trm._tt_jd1, t_trm._tt_jd2)
 
     def cond_func(carry):
         i, cur_t_trm_tt_jd2, prev_t_trm_tt_jd2, *_ = carry
@@ -942,15 +950,18 @@ def up_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, 
     init_lt = init_up_dist / C
     init_t_trm_tt_jd2 = t_bounce_tt_jd2 - init_lt
     init_carry = (0, init_t_trm_tt_jd2, init_t_trm_tt_jd2 + 1.0, init_up_pos, init_up_vel, init_up_dist, tx_state_bounce.pos,
-                  tx_state_bounce.vel, init_lt, t_bounce_tdb, t_bounce)
+                  tx_state_bounce.vel, init_lt, t_bounce_tdb.jd1, t_bounce_tdb.jd2,
+                  t_bounce._tt_jd1, t_bounce._tt_jd2)
 
     # -------------------------------------------------------------------------
     # Step 3: Solve the fixed-point light-time equation
     # -------------------------------------------------------------------------
-    _, _, _, up_pos, up_vel, up_dist, tx_pos_trm, tx_vel_trm, final_lt, t_trm_tdb, t_trm = jax.lax.while_loop(
-        cond_func,
-        body_func,
-        init_carry)
+    # Keep shared EOP outside the batched loop; retain the dates used for the last geometry evaluation.
+    (_, _, _, up_pos, up_vel, up_dist, tx_pos_trm, tx_vel_trm, final_lt,
+     final_tdb_jd1, final_tdb_jd2, final_tt_jd1, final_tt_jd2) = jax.lax.while_loop(
+        cond_func, body_func, init_carry)
+    t_trm = eqx.tree_at(lambda t: (t._tt_jd1, t._tt_jd2), t_bounce, (final_tt_jd1, final_tt_jd2))
+    t_trm_tdb = TDBView(final_tdb_jd1, final_tdb_jd2, t_trm)
     tx_state_trm = State(t_trm_tdb, tx_pos_trm, tx_vel_trm, BCRS)
     return LightPath(pos=up_pos, vel=up_vel, dist=up_dist, lt=final_lt, start=tx_state_trm,
                      end=target_state_bounce), t_trm

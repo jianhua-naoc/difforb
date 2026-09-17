@@ -14,7 +14,6 @@ from jax import Array
 from jax.typing import ArrayLike
 from jaxtyping import Float
 import equinox as eqx
-import warnings
 
 from difforb.core.batch import BatchableObject, is_array
 from difforb.core.constants import J2000, JULIAN_CENTURY
@@ -34,12 +33,6 @@ from difforb.utils import arcsec_to_rad
 
 jax.config.update("jax_enable_x64", True)
 
-warnings.filterwarnings(
-    "ignore",
-    message=r".*A JAX array is being set as static!.*",
-    category=UserWarning,
-)
-
 
 class Time(BatchableObject):
     """Class for time representations.
@@ -54,11 +47,15 @@ class Time(BatchableObject):
         Small remainder component of the Julian date in ``TT``.
     gregorian_start : Float[ArrayLike, ""], default=GREGORIAN_START_JD
         Julian date at which computed calendar fields switch from the Julian calendar to the Gregorian calendar.
+
+    Notes
+    -----
+    The EOP table is dynamic PyTree data shared by all epochs. DiffOrb batch operations retain the complete table without slicing or adding batch axes; JAX transformations and device placement can still access its arrays.
     """
 
     _tt_jd1: Float[Array, "..."]
     _tt_jd2: Float[Array, "..."]
-    eop: EarthOrientationData = eqx.field(static=True)
+    eop: EarthOrientationData = eqx.field(metadata={"batch_shared": True})
     gregorian_start: float = eqx.field(static=True)
 
     def __init__(self, tt_jd1: Float[ArrayLike, "..."], tt_jd2: Float[ArrayLike, "..."], *, eop: EarthOrientationData | None,

@@ -1,9 +1,69 @@
+"""Batch slicing and dispatch with explicit shared dynamic fields.
+
+Fields marked with ``metadata={"batch_shared": True}`` remain ordinary JAX PyTree data, but their subtrees are excluded from batch slicing, broadcasting, and mapped input/output axes. Unmarked fields retain the ordinary batch rules.
+"""
+
+from dataclasses import fields
+
 import numpy as np
 import equinox as eqx
 import jax
 from jax import numpy as jnp
 from abc import abstractmethod
 from typing import Any, Callable, Tuple
+
+
+def _batch_mask(tree: Any) -> Any:
+    """Build a leaf mask that excludes explicitly shared field subtrees."""
+    children, treedef = jax.tree_util.tree_flatten_with_path(
+        tree, is_leaf=lambda child: child is not tree
+    )
+    if len(children) == 1 and not children[0][0]:
+        return True
+
+    shared_fields = (
+        {field.name for field in fields(tree) if field.metadata.get("batch_shared", False)}
+        if isinstance(tree, eqx.Module) else set()
+    )
+    masks = []
+    for path, child in children:
+        key = path[0]
+        if isinstance(key, jax.tree_util.GetAttrKey) and key.name in shared_fields:
+            masks.append(jax.tree_util.tree_map(lambda _: False, child))
+        else:
+            masks.append(_batch_mask(child))
+    return jax.tree_util.tree_unflatten(treedef, masks)
+
+
+def _batch_map(func: Callable, tree: Any) -> Any:
+    """Transform batch leaves while retaining shared leaves unchanged."""
+    return jax.tree_util.tree_map(
+        lambda leaf, batched: func(leaf) if batched else leaf, tree, _batch_mask(tree)
+    )
+
+
+def _batch_leaves(tree: Any) -> list:
+    """Return leaves used for batch-shape inference."""
+    return [leaf for leaf, batched in zip(jax.tree_util.tree_leaves(tree),
+                                         jax.tree_util.tree_leaves(_batch_mask(tree))) if batched]
+
+
+def _batch_vmap(func: Callable, in_axes: Any) -> Callable:
+    """Map one axis while preserving shared dynamic output subtrees.
+
+    Output partitioning occurs during tracing. Shared arrays use ``out_axes=None`` so they are neither stacked nor selected from an arbitrary batch row. JAX rejects a shared output that depends on the mapped axis.
+    """
+    def split_output(*args):
+        result = func(*args)
+        return eqx.partition(result, _batch_mask(result))
+
+    mapped = eqx.filter_vmap(split_output, in_axes=in_axes, out_axes=(eqx.if_array(0), None))
+
+    def combined(*args):
+        batched, shared = mapped(*args)
+        return eqx.combine(batched, shared)
+
+    return combined
 
 
 def is_array(x: Any) -> bool:
@@ -40,7 +100,7 @@ class BatchableObject(eqx.Module):
         Returns
         -------
         BatchableObject
-            A new instance with sliced array leaves.
+            A new instance with sliced batch-array leaves. Explicitly shared field subtrees are retained unchanged.
         """
 
         def _slice_leaf(x):
@@ -48,7 +108,7 @@ class BatchableObject(eqx.Module):
                 return x[key]
             return x
 
-        return jax.tree_util.tree_map(_slice_leaf, self)
+        return _batch_map(_slice_leaf, self)
 
     @property
     @abstractmethod
@@ -92,7 +152,7 @@ def get_tree_ndim(obj: Any) -> int:
         return obj.ndim
     if hasattr(obj, "shape"):
         return len(obj.shape)
-    leaves = jax.tree_util.tree_leaves(obj)
+    leaves = _batch_leaves(obj)
     if not leaves:
         return 0
     return jnp.ndim(leaves[0])
@@ -127,7 +187,7 @@ def safe_dispatch(single_func: Callable, core_ndims_in: Tuple, *args: Any) -> An
             return jnp.asarray(leaf)
         return leaf
 
-    args = tuple(jax.tree_util.tree_map(_ensure_array, arg) for arg in args)
+    args = tuple(_batch_map(_ensure_array, arg) for arg in args)
 
     # 2. Extract and validate raw batch shapes.
     raw_batch_shapes = []
@@ -141,7 +201,7 @@ def safe_dispatch(single_func: Callable, core_ndims_in: Tuple, *args: Any) -> An
         if hasattr(arg, "shape"):
             s = arg.shape
         else:
-            leaves = jax.tree_util.tree_leaves(arg)
+            leaves = _batch_leaves(arg)
             s = jnp.shape(leaves[0]) if leaves else ()
 
         raw_batch_shapes.append(s[:-c_dim] if c_dim > 0 else s)
@@ -193,7 +253,10 @@ def safe_dispatch(single_func: Callable, core_ndims_in: Tuple, *args: Any) -> An
                         return 0
                 return None
 
-            in_axes_args_per_k[k].append(jax.tree_util.tree_map(get_in_axes_leaf, arg))
+            in_axes_args_per_k[k].append(jax.tree_util.tree_map(
+                lambda leaf, batched: get_in_axes_leaf(leaf) if batched else None,
+                arg, _batch_mask(arg),
+            ))
 
         kept_b_shape = tuple(kept_b_shape)
 
@@ -209,12 +272,12 @@ def safe_dispatch(single_func: Callable, core_ndims_in: Tuple, *args: Any) -> An
                 return leaf.reshape(kept_b_shape + intrinsic_shape)
             return leaf
 
-        flat_args.append(jax.tree_util.tree_map(prepare_leaf, arg))
+        flat_args.append(_batch_map(prepare_leaf, arg))
 
     # 5. Apply nested ``vmap``.
     vmapped_func = single_func
     for k in reversed(range(K)):
-        vmapped_func = eqx.filter_vmap(vmapped_func, in_axes=tuple(in_axes_args_per_k[k]))
+        vmapped_func = _batch_vmap(vmapped_func, in_axes=tuple(in_axes_args_per_k[k]))
 
     res = vmapped_func(*flat_args)
 
@@ -225,7 +288,7 @@ def safe_dispatch(single_func: Callable, core_ndims_in: Tuple, *args: Any) -> An
             return leaf.reshape(common_batch_shape + output_intrinsic_shape)
         return leaf
 
-    return jax.tree_util.tree_map(reshape_output, res)
+    return _batch_map(reshape_output, res)
 
 
 def safe_cartesian_dispatch(single_func: Callable, *arg_groups: Tuple[Tuple, Tuple]) -> Any:
@@ -259,7 +322,7 @@ def safe_cartesian_dispatch(single_func: Callable, *arg_groups: Tuple[Tuple, Tup
 
     # Extract and validate the batch dimensions for each argument group.
     for core_ndims, args in arg_groups:
-        args = tuple(jax.tree_util.tree_map(_ensure_array, arg) for arg in args)
+        args = tuple(_batch_map(_ensure_array, arg) for arg in args)
 
         group_b_shape = ()
         arg_b_shapes = []  # Raw batch dimensions for each argument in this group.
@@ -272,7 +335,7 @@ def safe_cartesian_dispatch(single_func: Callable, *arg_groups: Tuple[Tuple, Tup
             if hasattr(arg, "shape"):
                 s = arg.shape
             else:
-                leaves = jax.tree_util.tree_leaves(arg)
+                leaves = _batch_leaves(arg)
                 s = jnp.shape(leaves[0]) if leaves else ()
 
             b_shape = s[:-c_dim] if c_dim > 0 else s
@@ -314,7 +377,7 @@ def safe_cartesian_dispatch(single_func: Callable, *arg_groups: Tuple[Tuple, Tup
                     return leaf.reshape(new_shape)
                 return leaf
 
-            flat_args.append(jax.tree_util.tree_map(reshape_leaf, arg))
+            flat_args.append(_batch_map(reshape_leaf, arg))
             flat_core_ndims.append(c_dim)
 
     # Delegate the multi-level ``vmap`` mapping to the base safe dispatcher.
