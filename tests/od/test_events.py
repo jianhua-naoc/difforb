@@ -108,7 +108,7 @@ def test_run_log_handler_renders_events():
             context={"stage": 1},
             data={
                 "converged": True,
-                "reason": "gradient_converged",
+                "reason": "correction_converged",
                 "steps": 2,
                 "normalized_residual_rms": 3.0e-4,
                 "cov_rank": 6,
@@ -118,7 +118,7 @@ def test_run_log_handler_renders_events():
     )
 
     assert lines == [
-        "  LSQ done: converged, reason=gradient_converged, steps=2, "
+        "  LSQ done: converged, reason=correction_converged, steps=2, "
         "normalized residual RMS=3.000e-04, covariance rank=6/6"
     ]
 

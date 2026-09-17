@@ -112,7 +112,7 @@ def analysis_case():
             cov_condition=jnp.asarray(1.0, dtype=jnp.float64),
             cov_valid=jnp.asarray(True),
             converged=True,
-            termination_reason="gradient_converged",
+            termination_reason="correction_converged",
             lsq_iterations=2,
             outlier_iterations=1,
         ),

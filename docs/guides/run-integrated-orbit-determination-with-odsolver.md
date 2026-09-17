@@ -86,7 +86,7 @@ from difforb.od import DCSolver, IODSolver, ODSolver
 
 solver = ODSolver(
     IODSolver(max_iter=20, tol=1e-8),
-    DCSolver(lsq_tol=1e-5, lsq_max_iters=8, sun=sun, earth=earth),
+    DCSolver(lsq_max_iters=8, sun=sun, earth=earth),
 )
 ```
 

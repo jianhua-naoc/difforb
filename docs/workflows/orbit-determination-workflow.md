@@ -86,7 +86,6 @@ integrator = NumericalIntegrator(
 solver = ODSolver(
     IODSolver(),
     DCSolver(
-        lsq_tol=1e-11,
         lsq_max_iters=20,
         sun=EphemerisBody("sun", eph=ephemeris),
         earth=EphemerisBody("earth", eph=ephemeris),

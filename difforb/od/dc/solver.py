@@ -15,21 +15,20 @@ from difforb.astrometry.weight import WeightPolicy
 from difforb.body.ephbody import EphemerisBody
 from difforb.body.smallbody import Orbit
 from difforb.core.element import KepElement
+from difforb.core.validate import coerce_scalar_bool
 from difforb.core.state.frame import BCRS
 from difforb.core.state.state import State
 from difforb.dynamics.force_model import ForceModel
 from difforb.integrator.integrator import NumericalIntegrator
 from difforb.od.dc.prediction import AstrometryMeasurementModel
 from difforb.od.events import SolverEventHandler, SolverEventLogger, SolverLogDetail
-from difforb.od.lsq import (
-    LeastSquares,
-    RobustLeastSquares,
-    RobustResult,
+from difforb.od.dc.lsq import LSQTermination, LeastSquares, RobustLeastSquares, RobustResult
+from difforb.od.dc.lsq.core import (
     build_time_inflated_optical_weight_matrices,
     compute_unweighted_rms,
     whiten_residuals,
 )
-from difforb.report.text import build_repr, format_float_array
+from difforb.report.text import build_repr
 
 from difforb.od.dc.result import DCResult, DCEstimate, OpticalResult, RadarResult, LSQDiagnostics
 from difforb.od.outlier.policy import InteractiveOutlierPolicy
@@ -67,12 +66,14 @@ class DCSolver:
     does not disable robust diagnostics. When optical time uncertainties are
     available, the solver refreshes the time-inflated optical weight matrices at
     each least-squares linearization point from the modeled sky-plane rates.
+    Every fit uses the same fixed convergence settings: correction norm below
+    1e-3 or six accepted steps with less than 0.1 percent RMS decrease.
     """
 
     def __init__(self,
-                 lsq_tol: float = 1e-11,
                  lsq_max_iters: int = 20,
                  *,
+                 solver_jit: bool = False,
                  sun: EphemerisBody | None = None,
                  earth: EphemerisBody | None = None):
         """
@@ -80,12 +81,10 @@ class DCSolver:
 
         Parameters
         ----------
-        lsq_tol : float, default=1e-11
-            Base convergence threshold for the inner least-squares solve. This
-            value controls the relative scaled step norm and the relative loss
-            reduction; the scaled gradient threshold defaults to its square root.
         lsq_max_iters : int, default=20
-            Maximum number of iterations allowed in each least-squares solve.
+            Maximum number of accepted steps allowed in each least-squares solve.
+        solver_jit : bool, default=False
+            Compile the complete least-squares and outlier-rejection loops. When false, Python controls the loops around small JIT-compiled numerical kernels. Residuals, Jacobians, and orbit propagation retain their own JIT settings.
         sun : EphemerisBody or None, optional
             Ephemeris-backed Sun body used by the light-time and residual
             models. If omitted, the solver resolves ``EphemerisBody("sun")``
@@ -100,8 +99,8 @@ class DCSolver:
         ValueError
             Raised when a numeric option falls outside its valid range.
         """
-        self.lsq_tol = lsq_tol
         self.lsq_max_iter = lsq_max_iters
+        self.solver_jit = coerce_scalar_bool("solver_jit", solver_jit)
 
         self._sun = sun if sun is not None else EphemerisBody('sun')
         self._earth = earth if earth is not None else EphemerisBody('earth')
@@ -110,8 +109,8 @@ class DCSolver:
         return build_repr(
             self.__class__.__name__,
             [
-                ("lsq_tol", format_float_array(self.lsq_tol)),
                 ("lsq_max_iter", str(self.lsq_max_iter)),
+                ("solver_jit", str(self.solver_jit)),
             ],
         )
 
@@ -185,10 +184,10 @@ class DCSolver:
                                          cov_rank=lsq_result.cov_rank,
                                          cov_condition=lsq_result.cov_condition,
                                          cov_valid=lsq_result.cov_valid,
-                                         converged=lsq_result.converged,
-                                         termination_reason=lsq_result.termination_reason,
-                                         lsq_iterations=robust_result.lsq_iter_num,
-                                         outlier_iterations=robust_result.outlier_iter_num)
+                                         converged=bool(lsq_result.converged),
+                                         termination_reason=LSQTermination(int(lsq_result.termination_code)).name,
+                                         lsq_iterations=int(robust_result.lsq_iter_num),
+                                         outlier_iterations=int(robust_result.outlier_iter_num))
 
         return DCResult(estimate=estimate, optical=optical_result, radar=radar_result,
                         lsq_diagnostics=lsq_diagnostics, normalized_residual_rms=float(lsq_result.normalized_residual_rms))
@@ -225,8 +224,7 @@ class DCSolver:
             parameters are appended after the dynamical model parameters in the
             least-squares vector.
         event_handler : SolverEventHandler or None, optional
-            Optional callback that receives least-squares and outlier-rejection
-            progress events.
+            Optional callback for least-squares and outlier-rejection events. The default host driver emits progress as the solve runs; the fully compiled driver emits final summaries after completion.
         log_detail : {"quiet", "summary", "iter", "trial"}, default="iter"
             Minimum solver-log detail emitted to ``event_handler``.
         event_logger : SolverEventLogger or None, optional
@@ -295,7 +293,7 @@ class DCSolver:
         photocenter_param_scale = jnp.asarray(photocenter_correction.get_estimated_param_scales(), dtype=init_state_params.dtype)
         param_scale = jnp.concatenate([jnp.ones_like(init_state_params), model_param_scale, photocenter_param_scale])
 
-        lsq_solver = LeastSquares(tol=self.lsq_tol, max_iter=self.lsq_max_iter)
+        lsq_solver = LeastSquares(max_iter=self.lsq_max_iter, solver_jit=self.solver_jit)
         robust_solver = RobustLeastSquares(lsq_solver)
         robust_lsq_result = robust_solver.solve(
             init_params,

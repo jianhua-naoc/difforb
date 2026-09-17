@@ -84,16 +84,18 @@ This example uses a `DynamicSystem` with only Sun Newtonian gravity, so the code
 
 The `DCSolver(...)` constructor accepts these arguments:
 
-- `lsq_tol`: convergence threshold for the least-squares solve. A smaller value is stricter.
 - `lsq_max_iters`: maximum number of least-squares iterations.
+- `solver_jit`: whether to compile the complete fitting and rejection loops; default `False`. The default favors lower first-call compilation cost, while residual, Jacobian, and propagation calculations still use JAX compilation.
 - `sun`: an `EphemerisBody` object for the Sun.
 - `earth`: an `EphemerisBody` object for the Earth.
 
 If `sun` or `earth` is omitted, `DCSolver` creates `EphemerisBody("sun")` or `EphemerisBody("earth")` during construction.
 
 ```python
-dc = DCSolver(lsq_tol=1e-5, lsq_max_iters=8, sun=sun, earth=earth)
+dc = DCSolver(lsq_max_iters=8, sun=sun, earth=earth)
 ```
+
+For repeated fits, enable whole-solver compilation with `DCSolver(solver_jit=True, sun=sun, earth=earth)`. The default avoids this large compilation step, but individual numerical steps and model kernels still compile. Compare first-call and repeated-call times for your workload; neither mode is always faster.
 
 ## 3. Run `DCSolver.solve`
 
@@ -143,12 +145,9 @@ print("POS_AU", [round(float(x), 9) for x in orbit.pos.tolist()])
 print("VEL_AU_PER_D", [round(float(x), 9) for x in orbit.vel.tolist()])
 ```
 
-```text title="Output"
+```text title="Output excerpt"
 N_OBS 80
 NORMALIZED_RESIDUAL_RMS 0.426434
-CONVERGED True
-REASON gradient_converged
-ITERS 4 1
 OPTICAL_INLIERS 80 80
 OPTICAL_OUTLIERS 0
 COV_VALID True
@@ -159,7 +158,9 @@ POS_AU [-1.106644219, -0.13528989, -0.039702689]
 VEL_AU_PER_D [0.014502814, -0.011577568, -0.00660712]
 ```
 
-For uncertainty fields and orbit conversion, see [Inspect Differential Correction Results](inspect-differential-correction-results.md).
+Convergence settings are fixed: `delnor < 1e-3` or six consecutive accepted steps with less than 0.1 percent RMS decrease. The same settings apply before and after outlier rejection.
+
+A converged solve reports `correction_converged` when the correction norm met its threshold, or `rms_stagnated` when RMS stopped improving under the fixed stopping policy. Iteration counts can differ with solver versions and numerical precision. For uncertainty fields and orbit conversion, see [Inspect Differential Correction Results](inspect-differential-correction-results.md).
 
 ## Verification
 

@@ -174,7 +174,8 @@ def render_solver_event_text(event: SolverEvent) -> str:
                 f"normalized residual RMS={_format_sci(data['normalized_residual_rms'])}, "
                 f"covariance rank={data.get('cov_rank', '?')}/{data.get('n_params', '?')}")
     if name == "lsq_failed":
-        return (f"{_indent(lsq_depth)}LSQ stopped: damping failed at step "
+        reason = str(data.get("reason", "damping_failed")).replace("_", " ")
+        return (f"{_indent(lsq_depth)}LSQ stopped: {reason} at step "
                 f"{ctx.get('lsq_step', data.get('step', '?'))}, "
                 f"normalized residual RMS={_format_sci(data['normalized_residual_rms'])}")
 

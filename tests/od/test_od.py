@@ -206,7 +206,7 @@ def make_dc_result(orbit, n_optical, n_radar):
         cov_condition=jnp.asarray(1.0, dtype=jnp.float64),
         cov_valid=jnp.asarray(True),
         converged=True,
-        termination_reason="gradient_converged",
+        termination_reason="correction_converged",
         lsq_iterations=1,
         outlier_iterations=0,
     )

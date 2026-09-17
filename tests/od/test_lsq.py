@@ -7,14 +7,11 @@ import numpy as np
 
 from difforb.astrometry.weight import WeightResult
 
-from difforb.od.lsq import (
-    LeastSquares,
-    RobustLeastSquares,
+from difforb.od.dc.lsq import LeastSquares, RobustLeastSquares
+from difforb.od.dc.lsq.core import (
     compute_normalized_residual_rms,
     compute_prior_covariance,
     compute_unweighted_rms,
-    compute_weighted_lsq_loss,
-    solve_normal_equation,
 )
 from difforb.od.outlier.chi2 import Chi2OutlierRejecter
 from difforb.od.outlier.policy import CompiledOutlierPolicy
@@ -24,44 +21,6 @@ from tests.assertions import assert_allclose, assert_array_equal
 def scalar_weight_arrays(weights):
     weights_array = jnp.asarray(weights)
     return jnp.zeros((0, 2, 2), dtype=weights_array.dtype), weights_array
-
-
-def test_solve_normal_equation_matches_weighted_closed_form():
-    jacobian = jnp.asarray(
-        [
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [2.0, -1.0],
-        ]
-    )
-    rhs = jnp.asarray([1.0, -2.0, 0.5, 3.0])
-    weights = jnp.asarray([1.0, 4.0, 0.25, 2.0])
-    inlier_mask = jnp.asarray([True, True, False, True])
-    param_scale = jnp.ones(2)
-    damping_diag = jnp.sum(jacobian * jacobian * weights[:, None], axis=0)
-    optical_weight_matrices, radar_weights = scalar_weight_arrays(weights)
-
-    actual = solve_normal_equation(
-        jacobian,
-        rhs,
-        optical_weight_matrices,
-        radar_weights,
-        inlier_mask,
-        damping=0.0,
-        damping_diag=damping_diag,
-        param_scale=param_scale,
-    )
-
-    sqrt_weights = jnp.sqrt(jnp.where(inlier_mask, weights, 0.0))
-    expected, *_ = jnp.linalg.lstsq(jacobian * sqrt_weights[:, None], rhs * sqrt_weights, rcond=1.0e-15)
-
-    print(
-        "[od.lsq.normal_equation] "
-        f"param_max_abs_diff={float(jnp.max(jnp.abs(actual - expected))):.12e}"
-    )
-
-    assert_allclose(actual, expected, atol=1.0e-13, rtol=0.0)
 
 
 def test_least_squares_solves_linear_model_against_closed_form():
@@ -87,7 +46,7 @@ def test_least_squares_solves_linear_model_against_closed_form():
     def linearize(params):
         return design, residuals(params), optical_weights, radar_weights
 
-    result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
+    result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
         residuals,
@@ -119,10 +78,7 @@ def test_least_squares_refreshes_dynamic_weights_at_final_parameters():
     def residuals(params):
         return jnp.asarray([params[0] - 1.0])
 
-    evaluated_params = []
-
     def linearize(params):
-        evaluated_params.append(np.asarray(params).copy())
         return (
             jnp.asarray([[1.0]]),
             residuals(params),
@@ -130,7 +86,7 @@ def test_least_squares_refreshes_dynamic_weights_at_final_parameters():
             jnp.asarray([1.0 + params[0] * params[0]]),
         )
 
-    result = LeastSquares(tol=1.0e-13, max_iter=20).solve(
+    result = LeastSquares(max_iter=20).solve(
         init_params,
         inlier_mask,
         residuals,
@@ -140,7 +96,7 @@ def test_least_squares_refreshes_dynamic_weights_at_final_parameters():
     assert result.converged
     assert_allclose(result.params, jnp.asarray([1.0]), atol=1.0e-9, rtol=0.0)
     assert_allclose(result.radar_weights, jnp.asarray([2.0]), atol=1.0e-9, rtol=0.0)
-    assert_allclose(evaluated_params[-1], result.params, atol=0.0, rtol=0.0)
+    assert_allclose(result.radar_weights, 1.0 + result.params**2, atol=0.0, rtol=0.0)
 
 
 def test_least_squares_uses_optical_correlation_blocks():
@@ -175,7 +131,7 @@ def test_least_squares_uses_optical_correlation_blocks():
     def linearize(params):
         return design, residuals(params), fixed_optical_weights, fixed_radar_weights
 
-    result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
+    result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
         residuals,
@@ -217,7 +173,7 @@ def test_least_squares_ignores_masked_outlier_rows():
     def linearize(params):
         return design, residuals(params), optical_weights, radar_weights
 
-    result = LeastSquares(tol=1.0e-13, max_iter=50).solve(
+    result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
         residuals,
@@ -244,12 +200,9 @@ def test_lsq_metrics_ignore_outliers():
     inlier_mask = jnp.asarray([True, True, False, True])
     optical_weight_matrices, radar_weights = scalar_weight_arrays(weights)
 
-    expected_loss = 0.5 * (1.0 * 1.0**2 + 4.0 * (-2.0) ** 2 + 0.25 * 4.0**2)
     expected_unweighted_rms = jnp.sqrt((1.0**2 + (-2.0) ** 2 + 4.0**2) / 3.0)
     expected_normalized_rms = jnp.sqrt((1.0 * 1.0**2 + 4.0 * (-2.0) ** 2 + 0.25 * 4.0**2) / 3.0)
 
-    assert_allclose(compute_weighted_lsq_loss(residuals, optical_weight_matrices, radar_weights, inlier_mask),
-                    expected_loss, atol=1.0e-15, rtol=0.0)
     assert_allclose(compute_unweighted_rms(residuals, inlier_mask), expected_unweighted_rms, atol=1.0e-15, rtol=0.0)
     assert_allclose(compute_normalized_residual_rms(residuals, optical_weight_matrices, radar_weights, inlier_mask),
                     expected_normalized_rms, atol=1.0e-15, rtol=0.0)
@@ -290,7 +243,7 @@ def test_robust_lsq_events_ignore_structural_padding():
         observation_valid_mask=valid_mask,
     )
 
-    RobustLeastSquares(LeastSquares(tol=1.0e-13, max_iter=50)).solve(
+    RobustLeastSquares(LeastSquares(max_iter=50)).solve(
         init_params,
         policy,
         residuals,
@@ -333,7 +286,7 @@ def test_robust_lsq_refits_final_mask_when_max_outlier_iterations_reached():
         observation_valid_mask=jnp.ones(4, dtype=bool),
     )
 
-    result = RobustLeastSquares(LeastSquares(tol=1.0e-13, max_iter=50)).solve(
+    result = RobustLeastSquares(LeastSquares(max_iter=50)).solve(
         init_params,
         policy,
         residuals,
@@ -366,16 +319,9 @@ def test_prior_covariance_reports_rank_deficiency():
     assert jnp.all(jnp.isfinite(result.cov_mat))
 
 
-def test_least_squares_keeps_linearization_weights_during_trials(monkeypatch):
-    import difforb.od.lsq as lsq_module
-
-    linearizations = []
-    trial_params = []
-    original_loss = lsq_module.compute_weighted_lsq_loss
-
+def test_least_squares_keeps_linearization_weights_during_trials():
     def linearize(params):
         radar_weights = jnp.asarray([2.0 + params[0] ** 2])
-        linearizations.append((np.asarray(params).copy(), np.asarray(radar_weights).copy()))
         return (
             jnp.asarray([[2.0 * params[0]]]),
             jnp.asarray([params[0] ** 2 - 1.0]),
@@ -384,19 +330,25 @@ def test_least_squares_keeps_linearization_weights_during_trials(monkeypatch):
         )
 
     def residuals(params):
-        trial_params.append(np.asarray(params).copy())
         return jnp.asarray([params[0] ** 2 - 1.0])
 
-    def checked_loss(values, optical_weights, radar_weights, mask):
-        assert_allclose(radar_weights, linearizations[-1][1], atol=0.0, rtol=0.0)
-        return original_loss(values, optical_weights, radar_weights, mask)
-
-    monkeypatch.setattr(lsq_module, "compute_weighted_lsq_loss", checked_loss)
-    result = LeastSquares(tol=1.0e-11, max_iter=50).solve(
+    events = []
+    solver = LeastSquares(max_iter=50)
+    result = solver.solve(
         jnp.asarray([0.1]), jnp.asarray([True]), residuals, linearize,
+        event_handler=events.append, log_detail="trial",
     )
     assert result.converged
-    assert trial_params
-    assert len(trial_params) > result.iter_num
-    assert_allclose(result.params, jnp.asarray([1.0]), atol=1.0e-8, rtol=0.0)
-    assert_allclose(linearizations[-1][0], result.params, atol=0.0, rtol=0.0)
+    rejected = [event for event in events if event.event == "lm_trial_rejected"]
+    assert rejected
+    # The first scalar LM correction is known analytically. Its rejected RMS
+    # must use W(0.1), even though the candidate has a very different weight.
+    x0 = 0.1
+    candidate = x0 + (1.0 - x0**2) / (2.0*x0*(1.0 + solver.damping_init))
+    expected_rms = abs(candidate**2 - 1.0) * np.sqrt(2.0 + x0**2)
+    assert_allclose(rejected[0].data["normalized_residual_rms"], expected_rms, rtol=1e-12, atol=0.)
+    assert len([event for event in events if event.event == "lsq_step_accepted"]) == result.iter_num
+    # For this scalar root, the normal-matrix correction norm equals the whitened residual.
+    assert result.params[0] > 0.
+    assert result.normalized_residual_rms < 1e-3
+    assert_allclose(result.radar_weights, 2.0 + result.params**2, atol=0.0, rtol=0.0)

@@ -31,14 +31,10 @@ print("FLAT_JAC_SHAPE", tuple(diag.flat_jacobian.shape))
 print("FLAT_WEIGHTS_SHAPE", tuple(diag.flat_weights.shape))
 ```
 
-Output for the short `2025 BC10` example:
+Selected numerical diagnostics recorded for the short `2025 BC10` example; iteration counts depend on the solver and tolerance:
 
 ```text title="Output"
 NORMALIZED_RESIDUAL_RMS 0.426434
-CONVERGED True
-TERMINATION gradient_converged
-LSQ_ITERS 4
-OUTLIER_ITERS 1
 COV_VALID True
 COV_RANK 6
 COV_CONDITION 7.092e+03
@@ -63,10 +59,13 @@ The fields mean:
 
 Possible `termination_reason` values are:
 
-- `gradient_converged`: the scaled gradient was small enough.
-- `step_converged`: the accepted parameter step was small enough.
+- `correction_converged`: the undamped correction norm in the normal-matrix metric fell below the fixed threshold `1e-3` on an accepted step.
+- `rms_stagnated`: weighted residual RMS failed to decrease sufficiently for six consecutive accepted steps; the correction norm need not meet its threshold.
+- `rms_increasing`: the insufficient-decrease limit was reached and the final RMS increased by more than 10 percent; this is a failed fit.
 - `max_iter_reached`: the solver reached the maximum accepted iteration count.
 - `damping_failed`: no damped trial step could be accepted.
+- `nonfinite_model`: the current parameters or weighted linearization contained nonfinite values.
+- `linear_solve_failed`: the linear solver or trust-region search reported a failure.
 
 ## 2. Inspect orbit and covariance
 
