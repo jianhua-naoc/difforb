@@ -1,6 +1,6 @@
 """Solar and terrestrial ``J2`` force terms.
 
-This module separates the two built-in zonal quadrupole models because their pole conventions differ. The solar term uses a fixed inertial pole, defaulting to the ecliptic-of-J2000 pole used by the OrbFit solar oblateness approximation. The terrestrial term evaluates the ``ITRS`` z-axis at the propagation epoch and can be limited to a near-Earth distance range.
+Both zonal quadrupole models use fixed inertial poles in ``ICRS`` axes. The solar term defaults to the ecliptic-of-J2000 pole used by the OrbFit solar oblateness approximation. The terrestrial term requires an explicit pole and can be limited to a near-Earth distance range.
 """
 
 from typing import Any, Tuple
@@ -15,16 +15,13 @@ from difforb.body.ephbody import EphemerisBody
 from difforb.core.constants import AU_M, J2_SUN, R_SUN
 from difforb.core.geo import ITRF
 from difforb.core.state.axes import Axes, axes_to_icrs_rotation
-from difforb.core.time.timescale import Time
 from difforb.dynamics.force_model.base import Force
-from difforb.utils import R3_single
 
 
 J2_EARTH = jnp.array(1.0826267e-3, dtype=jnp.float64)
 R_EARTH = jnp.array(ITRF.a, dtype=jnp.float64) / AU_M
 EARTH_J2_MAX_DISTANCE = jnp.array(0.1, dtype=jnp.float64)
 ECLIPTIC_J2000_POLE_ICRS = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float64) @ axes_to_icrs_rotation(Axes.ECLIP_J2000)
-ITRS_POLE = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float64)
 
 
 @jax.jit
@@ -143,24 +140,24 @@ class SolarJ2Perturbation(Force):
 
 
 class EarthJ2Perturbation(Force):
-    """Terrestrial ``J2`` perturbation with an epoch-dependent Earth pole.
+    """Terrestrial ``J2`` perturbation with a fixed inertial Earth pole.
 
-    By default, the pole is the ``ITRS`` z-axis transformed through polar motion, Earth rotation, and the ``CIRS`` to ``GCRS`` rotation at the requested epoch. A fixed pole can be supplied for tests or simplified sensitivity calculations.
+    The supplied ``ICRS`` pole direction is held constant throughout propagation. This approximation does not track precession, nutation, or polar motion. The Earth center continues to follow its ephemeris.
     """
     body: EphemerisBody
     j2: Float[Array, ""]
     radius: Float[Array, ""]
     max_distance: Float[Array, ""]
-    fixed_pole_unit_vec: Float[Array, "3"]
-    use_fixed_pole: bool = eqx.field(static=True)
+    pole_unit_vec: Float[Array, "3"]
 
     def __init__(
             self,
             body: EphemerisBody,
+            *,
+            pole_unit_vec: Float[ArrayLike, "3"],
             j2: Float[ArrayLike, ""] = J2_EARTH,
             radius: Float[ArrayLike, ""] = R_EARTH,
             max_distance: Float[ArrayLike, ""] = EARTH_J2_MAX_DISTANCE,
-            fixed_pole_unit_vec: Float[ArrayLike, "3"] | None = None,
     ):
         """Initialize an Earth ``J2`` perturbation.
 
@@ -168,46 +165,33 @@ class EarthJ2Perturbation(Force):
         ----------
         body : EphemerisBody
             Earth ephemeris body that supplies the center position and gravitational parameter.
+        pole_unit_vec : Float[ArrayLike, "3"]
+            Nonzero, finite Earth pole direction in ``ICRS`` axes. It is normalized on construction and held fixed in inertial space; an ``ITRS`` direction must first be transformed to ``ICRS`` at the chosen reference epoch.
         j2 : Float[ArrayLike, ""], default=J2_EARTH
             Positive dimensionless terrestrial ``J2``.
         radius : Float[ArrayLike, ""], default=R_EARTH
             Terrestrial equatorial reference radius in ``au``.
         max_distance : Float[ArrayLike, ""], default=0.1
             Maximum geocentric distance for applying the term, in ``au``.
-        fixed_pole_unit_vec : Float[ArrayLike, "3"] or None, optional
-            Fixed Earth pole unit vector in ``BCRS`` axes. If omitted, the pole is evaluated at each ``TDB`` epoch from ``ITRS`` through the Earth-rotation matrices.
+
+        Raises
+        ------
+        ValueError
+            If the pole does not have shape ``(3,)``.
+        equinox.EquinoxRuntimeError
+            If the pole contains non-finite components or has zero length.
         """
         self.body = body
         self.j2 = jnp.asarray(j2, dtype=float)
         self.radius = jnp.asarray(radius, dtype=float)
         self.max_distance = jnp.asarray(max_distance, dtype=float)
-        self.use_fixed_pole = fixed_pole_unit_vec is not None
-        if fixed_pole_unit_vec is None:
-            self.fixed_pole_unit_vec = jnp.zeros(3, dtype=float)
-        else:
-            fixed_pole_unit_vec = jnp.asarray(fixed_pole_unit_vec, dtype=float)
-            self.fixed_pole_unit_vec = fixed_pole_unit_vec / jnp.linalg.norm(fixed_pole_unit_vec)
-
-    def get_current_pole(self, tdb_jd1: Float[Array, ""], tdb_jd2: Float[Array, ""]) -> Float[Array, "3"]:
-        """Return the Earth pole unit vector in ``BCRS`` axes at one ``TDB`` epoch.
-
-        Parameters
-        ----------
-        tdb_jd1, tdb_jd2 : Float[Array, ""]
-            Two parts of the ``TDB`` Julian Date.
-
-        Returns
-        -------
-        Float[Array, "3"]
-            Unit pole vector in the same axes as the propagated ``BCRS`` state.
-        """
-        if self.use_fixed_pole:
-            return self.fixed_pole_unit_vec
-        time = Time.from_tdb_jd(tdb_jd1, tdb_jd2)
-        pole_tirs = time.inversed_polar_motion_matrix @ ITRS_POLE
-        pole_cirs = R3_single(-time.ERA) @ pole_tirs
-        pole_gcrs = time.cirs_to_gcrs_matrix @ pole_cirs
-        return pole_gcrs / jnp.linalg.norm(pole_gcrs)
+        pole = jnp.asarray(pole_unit_vec, dtype=float)
+        if pole.shape != (3,):
+            raise ValueError("`pole_unit_vec` must have shape (3,).")
+        length = jnp.linalg.norm(pole)
+        pole = eqx.error_if(pole, ~jnp.isfinite(length) | (length == 0),
+                            "`pole_unit_vec` must be finite and nonzero.")
+        self.pole_unit_vec = pole / length
 
     def __call__(
             self,
@@ -236,7 +220,7 @@ class EarthJ2Perturbation(Force):
         pos_center = self.body._bcrs_pos_jd(tdb_jd1, tdb_jd2)
         dist = jnp.linalg.norm(pos - pos_center)
         j2_acc = compute_j2_acceleration_vec(
-            pos, pos_center, self.body.gm, self.j2, self.radius, self.get_current_pole(tdb_jd1, tdb_jd2)
+            pos, pos_center, self.body.gm, self.j2, self.radius, self.pole_unit_vec
         )
         return jnp.where(dist < self.max_distance, j2_acc, jnp.zeros_like(j2_acc))
 

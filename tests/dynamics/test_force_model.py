@@ -187,7 +187,7 @@ def test_earth_j2_perturbation_distance_cutoff():
         j2=0.1,
         radius=1.0,
         max_distance=3.0,
-        fixed_pole_unit_vec=jnp.asarray([0.0, 0.0, 1.0], dtype=float),
+        pole_unit_vec=jnp.asarray([0.0, 0.0, 1.0], dtype=float),
     )
     tdb_jd1 = jnp.asarray(2460741.0, dtype=float)
     tdb_jd2 = jnp.asarray(0.5, dtype=float)
@@ -207,6 +207,40 @@ def test_earth_j2_perturbation_distance_cutoff():
 
     assert_allclose(near_actual, near_expected, atol=1.0e-15, rtol=0.0)
     assert_allclose(far_actual, jnp.zeros(3, dtype=float), atol=0.0, rtol=0.0)
+
+
+def test_earth_j2_fixed_pole_normalization_and_forward_derivative():
+    body = FakeEphemerisBody(pos=(0.0, 0.0, 0.0), gm=2.0)
+
+    def acceleration(pole):
+        force = EarthJ2Perturbation(body, pole_unit_vec=pole, j2=0.1, radius=1.0, max_distance=3.0)
+        return force(jnp.asarray(2460741.0), jnp.asarray(0.5),
+                     (jnp.asarray([2.0, 0.3, -0.1]), jnp.zeros(3)))
+
+    pole = jnp.asarray([0.2, 0.4, 1.0])
+    actual = jax.jit(acceleration)(pole)
+    assert_allclose(actual, jax.jit(acceleration)(2 * pole), atol=1e-15)
+    jac = jax.jit(jax.jacfwd(acceleration))(pole)
+    assert_allclose(jac @ pole, jnp.zeros(3), atol=1e-15)
+    direction = jnp.asarray([1.0, -0.3, 0.2])
+    step = 1e-5
+    finite_difference = (acceleration(pole + step * direction) - acceleration(pole - step * direction)) / (2 * step)
+    assert_allclose(jac @ direction, finite_difference, atol=1e-11)
+
+
+@pytest.mark.parametrize("pole", [[0.0, 0.0, 0.0], [float("nan"), 0.0, 1.0], [float("inf"), 0.0, 1.0]])
+def test_earth_j2_rejects_invalid_pole(pole):
+    body = FakeEphemerisBody(pos=(0.0, 0.0, 0.0))
+    with pytest.raises(eqx.EquinoxRuntimeError, match="finite and nonzero"):
+        EarthJ2Perturbation(body, pole_unit_vec=pole)
+
+
+def test_earth_j2_requires_three_component_pole():
+    body = FakeEphemerisBody(pos=(0.0, 0.0, 0.0))
+    with pytest.raises(TypeError, match="pole_unit_vec"):
+        EarthJ2Perturbation(body)
+    with pytest.raises(ValueError, match="shape"):
+        EarthJ2Perturbation(body, pole_unit_vec=[0.0, 1.0])
 
 
 def test_compute_rtn_distance_law_non_grav_acceleration_axis_case():
