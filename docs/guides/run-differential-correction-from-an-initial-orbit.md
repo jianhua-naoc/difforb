@@ -88,7 +88,6 @@ The `DCSolver(...)` constructor accepts these arguments:
 - `lsq_max_iters`: maximum number of least-squares iterations.
 - `sun`: an `EphemerisBody` object for the Sun.
 - `earth`: an `EphemerisBody` object for the Earth.
-- `bucket_policy`: optional `DCBucketPolicy` that controls observation-count buckets. Simple calls leave it unset.
 
 If `sun` or `earth` is omitted, `DCSolver` creates `EphemerisBody("sun")` or `EphemerisBody("earth")` during construction.
 

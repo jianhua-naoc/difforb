@@ -25,7 +25,6 @@ from difforb.core.state.state import State
 from difforb.core.time.timescale import Time
 from difforb.dynamics.dynamic_system import DynamicSystem
 from difforb.integrator.integrator import NumericalIntegrator
-from difforb.od.dc.bucket import DCBucketPolicy
 from difforb.od.dc.result import DCResult
 from difforb.od.dc.solver import DCSolver
 from difforb.od.outlier.policy import InteractiveOutlierPolicy
@@ -131,7 +130,7 @@ def ground_optical_case(default_ephemeris, *, time_uncertainty_s=np.nan):
     return sun, earth, force_model, integrator, data, initial_state, expected_state
 
 
-def solve_ground_optical_case(default_ephemeris, *, bucket_policy=None, time_uncertainty_s=np.nan):
+def solve_ground_optical_case(default_ephemeris, *, time_uncertainty_s=np.nan):
     sun, earth, force_model, integrator, data, initial_state, expected_state = ground_optical_case(
         default_ephemeris,
         time_uncertainty_s=time_uncertainty_s,
@@ -141,7 +140,6 @@ def solve_ground_optical_case(default_ephemeris, *, bucket_policy=None, time_unc
         lsq_max_iters=20,
         sun=sun,
         earth=earth,
-        bucket_policy=bucket_policy,
     ).solve(
         data,
         initial_state,
@@ -252,33 +250,3 @@ def test_dc_solver_applies_optical_time_uncertainty_weights(default_ephemeris):
 
     assert np.all(np.isfinite(covariances))
     assert np.any(np.diagonal(covariances, axis1=1, axis2=2) > base_variance)
-
-
-def test_dc_solver_with_bucket_policy(default_ephemeris):
-    result, _, expected_state = solve_ground_optical_case(
-        default_ephemeris,
-        bucket_policy=DCBucketPolicy(optical_buckets=(12,), radar_buckets=(1,)),
-    )
-
-    pos_diff = result.estimate.orbit.pos - expected_state.pos
-    vel_diff = result.estimate.orbit.vel - expected_state.vel
-    print(
-        "[od.dc.solver.bucket] "
-        f"normalized_rms={result.normalized_residual_rms:.12e} "
-        f"pos_norm_diff={float(jnp.linalg.norm(pos_diff)):.12e} au "
-        f"vel_norm_diff={float(jnp.linalg.norm(vel_diff)):.12e} au/day "
-        f"flat_jac_shape={result.lsq_diagnostics.flat_jacobian.shape}"
-    )
-
-    assert result.estimate.orbit.frame == BCRS
-    assert result.optical.residuals.shape == (len(OBSERVATION_OFFSETS), 2)
-    assert result.optical.normalized_residuals.shape == (len(OBSERVATION_OFFSETS), 2)
-    assert result.optical.inlier_masks.shape == (len(OBSERVATION_OFFSETS),)
-    assert result.optical.metrics.shape == (len(OBSERVATION_OFFSETS),)
-    assert result.radar.residuals.shape == (0,)
-    assert result.lsq_diagnostics.flat_jacobian.shape == (2 * len(OBSERVATION_OFFSETS), 6)
-    assert result.lsq_diagnostics.flat_weights.shape == (2 * len(OBSERVATION_OFFSETS),)
-    assert result.optical.n_inliers == len(OBSERVATION_OFFSETS)
-    assert_allclose(result.estimate.orbit.pos, expected_state.pos, atol=5.0e-9, rtol=0.0)
-    assert_allclose(result.estimate.orbit.vel, expected_state.vel, atol=5.0e-11, rtol=0.0)
-    assert result.normalized_residual_rms < 1.0e-5

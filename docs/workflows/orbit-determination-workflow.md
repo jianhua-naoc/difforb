@@ -73,7 +73,7 @@ for the integration.
 from difforb.body import EphemerisBody
 from difforb.dynamics import DynamicSystem
 from difforb.integrator import NumericalIntegrator
-from difforb.od import DCBucketPolicy, DCSolver, IODSolver, ODSolver
+from difforb.od import DCSolver, IODSolver, ODSolver
 
 force_model = DynamicSystem.from_extended_system(ephemeris).build_force_model()
 integrator = NumericalIntegrator(
@@ -90,7 +90,6 @@ solver = ODSolver(
         lsq_max_iters=20,
         sun=EphemerisBody("sun", eph=ephemeris),
         earth=EphemerisBody("earth", eph=ephemeris),
-        bucket_policy=DCBucketPolicy(),
     ),
 )
 ```

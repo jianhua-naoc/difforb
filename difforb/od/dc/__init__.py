@@ -3,7 +3,6 @@
 from importlib import import_module
 
 _EXPORTS = {
-    "DCBucketPolicy": ("difforb.od.dc.bucket", "DCBucketPolicy"),
     "DCEstimate": ("difforb.od.dc.result", "DCEstimate"),
     "DCResult": ("difforb.od.dc.result", "DCResult"),
     "DCSolver": ("difforb.od.dc.solver", "DCSolver"),

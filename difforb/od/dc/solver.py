@@ -19,7 +19,6 @@ from difforb.core.state.frame import BCRS
 from difforb.core.state.state import State
 from difforb.dynamics.force_model import ForceModel
 from difforb.integrator.integrator import NumericalIntegrator
-from difforb.od.dc.bucket import DCBucketPolicy, crop_dc_result, pack_dc_observations
 from difforb.od.dc.prediction import AstrometryMeasurementModel
 from difforb.od.events import SolverEventHandler, SolverEventLogger, SolverLogDetail
 from difforb.od.lsq import (
@@ -75,8 +74,7 @@ class DCSolver:
                  lsq_max_iters: int = 20,
                  *,
                  sun: EphemerisBody | None = None,
-                 earth: EphemerisBody | None = None,
-                 bucket_policy: DCBucketPolicy | None = None):
+                 earth: EphemerisBody | None = None):
         """
         Create a differential-correction solver.
 
@@ -96,10 +94,6 @@ class DCSolver:
             Ephemeris-backed Earth body used by the site and light-time models.
             If omitted, the solver resolves ``EphemerisBody("earth")`` during
             construction.
-        bucket_policy : DCBucketPolicy or None, optional
-            Optional shape-bucket policy for padding non-empty observation
-            tables before residual and Jacobian evaluation. Padded residuals
-            are structurally masked and are cropped from the returned result.
 
         Raises
         ------
@@ -108,7 +102,6 @@ class DCSolver:
         """
         self.lsq_tol = lsq_tol
         self.lsq_max_iter = lsq_max_iters
-        self.bucket_policy = bucket_policy
 
         self._sun = sun if sun is not None else EphemerisBody('sun')
         self._earth = earth if earth is not None else EphemerisBody('earth')
@@ -119,7 +112,6 @@ class DCSolver:
             [
                 ("lsq_tol", format_float_array(self.lsq_tol)),
                 ("lsq_max_iter", str(self.lsq_max_iter)),
-                ("bucket_policy", self.bucket_policy.__class__.__name__ if self.bucket_policy is not None else None),
             ],
         )
 
@@ -246,26 +238,17 @@ class DCSolver:
             Final differential-correction result together with residual,
             chi-square, inlier-mask, and iteration diagnostics.
         """
-        packed_data = None
-        solve_data = data
-        if self.bucket_policy is not None:
-            packed_data = pack_dc_observations(data, self.bucket_policy)
-            solve_data = packed_data.data
+        layout = ObservationLayout(data)
 
-        layout = ObservationLayout(solve_data)
-
-        weight_results = weight_policy.weights(solve_data)
-        debias_result = debias_policy.bias(solve_data)
-        compiled_outlier_policy = outlier_policy.compiled(
-            layout,
-            flat_valid_mask=packed_data.flat_valid_mask if packed_data is not None else None,
-        )
+        weight_results = weight_policy.weights(data)
+        debias_result = debias_policy.bias(data)
+        compiled_outlier_policy = outlier_policy.compiled(layout)
 
         init_state = _canonicalize_initial_orbit(initial_orbit, self._sun, self._earth)
         if photocenter_correction is None:
             photocenter_correction = PhotocenterCorrection()
         measure_model = AstrometryMeasurementModel.build(
-            solve_data,
+            data,
             init_state.tdb,
             self._sun,
             self._earth,
@@ -324,7 +307,4 @@ class DCSolver:
             log_detail=log_detail,
             event_logger=event_logger,
         )
-        result = self._build_result(robust_lsq_result, layout, initial_orbit, force_model, photocenter_correction)
-        if packed_data is not None:
-            result = crop_dc_result(result, packed_data)
-        return result
+        return self._build_result(robust_lsq_result, layout, initial_orbit, force_model, photocenter_correction)

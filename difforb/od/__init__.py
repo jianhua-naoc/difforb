@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from difforb.od.analysis import ODAnalysis
-    from difforb.od.dc.bucket import DCBucketPolicy
     from difforb.od.dc.result import (
         DCEstimate,
         DCResult,
@@ -46,7 +45,6 @@ _EXPORTS = {
     "Chi2OutlierRejecter": ("difforb.od.outlier", "Chi2OutlierRejecter"),
     "CompiledOutlierPolicy": ("difforb.od.outlier", "CompiledOutlierPolicy"),
     "CompositeSolverEventHandler": ("difforb.od.events", "CompositeSolverEventHandler"),
-    "DCBucketPolicy": ("difforb.od.dc", "DCBucketPolicy"),
     "DCEstimate": ("difforb.od.dc", "DCEstimate"),
     "DCResult": ("difforb.od.dc", "DCResult"),
     "DCSolver": ("difforb.od.dc", "DCSolver"),
