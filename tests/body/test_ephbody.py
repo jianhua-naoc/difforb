@@ -4,13 +4,13 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from difforb.body.ephbody import EphemerisBody
+from difforb.body.ephbody import EphemerisBody, EphemerisBodyBatch
 from difforb.body.gm import gms
 from difforb.core.constants import AU_KM
 from difforb.core.state.frame import BCRS
 from difforb.core.time.timescale import Time
 from difforb.spk.spk import Ephemeris
-from tests.assertions import assert_allclose
+from tests.assertions import assert_allclose, assert_array_equal
 
 jax.config.update("jax_enable_x64", True)
 
@@ -123,6 +123,28 @@ def test_ephbody_name_gm_and_repr():
     assert body.signs == (1.0,)
     assert "SUN" in text
     assert "segment_count" in text
+
+
+def test_ephbody_batch_reuses_shared_paths_and_matches_individual_bodies():
+    eph = Ephemeris(str(SPK_PATH))
+    bodies = [EphemerisBody("earth", eph=eph), EphemerisBody("moon", eph=eph)]
+    batch = EphemerisBodyBatch(bodies)
+    tdb = Time.from_tdb_jd(HORIZONS_EPOCH_TDB_JD, 0.0).tdb()
+
+    positions = batch.evaluate(tdb.jd1, tdb.jd2)
+    pva = batch.evaluate(tdb.jd1, tdb.jd2, derivatives=True)
+    expected_positions = jnp.stack([
+        body._bcrs_pos_jd(tdb.jd1, tdb.jd2) for body in bodies
+    ])
+    expected_pva = tuple(jnp.stack(values) for values in zip(*[
+        body._bcrs_pva_jd(tdb.jd1, tdb.jd2) for body in bodies
+    ]))
+
+    assert len(batch.segment_groups) == 2
+    assert sum(len(members) for members in batch.group_members) == 3
+    assert_array_equal(positions, expected_positions)
+    for actual, expected in zip(pva, expected_pva):
+        assert_array_equal(actual, expected)
 
 
 def test_ephbody_rejects_non_tdb():

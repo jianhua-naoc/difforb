@@ -3,6 +3,7 @@
 This module defines :class:`EphemerisBody`, which evaluates its ``BCRS`` state from an ``SPK`` ephemeris.
 """
 
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 
@@ -12,7 +13,7 @@ from jaxtyping import Float
 
 from difforb.core.time.timescale import TDBView
 from difforb.core.validate import validate_timeview
-from difforb.spk.spk import Ephemeris
+from difforb.spk.spk import Ephemeris, MergedSegment
 from difforb.core.constants import AU_KM
 from difforb.core.state.frame import BCRS, Frame
 from difforb.core.state.origins import Origin
@@ -37,8 +38,6 @@ class EphemerisBody(eqx.Module):
     gm: float = eqx.field(static=True)
     naif_name: str = eqx.field(static=True)
 
-    _ephem_cache = {}
-
     def __init__(self, naif_name: str, eph: Optional[Ephemeris] = None) -> None:
         """Initialize an ephemeris body.
 
@@ -58,10 +57,7 @@ class EphemerisBody(eqx.Module):
         """
         _eph = eph or spk.load_default_ephemeris()
         self.naif_name = naif_name.upper()
-        cache_key = (self.naif_name, id(_eph))
-        if cache_key not in EphemerisBody._ephem_cache:
-            EphemerisBody._ephem_cache[cache_key] = _eph.load_body(self.naif_name)
-        self.segments, self.signs = EphemerisBody._ephem_cache[cache_key]
+        self.segments, self.signs = _eph.load_body(self.naif_name)
         if self.naif_name not in gms:
             raise RuntimeError(f"Invalid object name: {self.naif_name}.")
         self.gm = gms[self.naif_name]
@@ -169,3 +165,96 @@ class EphemerisBody(eqx.Module):
                 ("segment_count", str(len(self.segments))),
             ],
         )
+
+
+class EphemerisBodyBatch(eqx.Module):
+    """Compact evaluator for a fixed collection of ephemeris bodies."""
+
+    segment_groups: tuple
+    group_members: tuple = eqx.field(static=True)
+    body_paths: tuple = eqx.field(static=True)
+
+    def __init__(self, bodies: list[EphemerisBody]) -> None:
+        """Group shared and structurally identical SPK paths across bodies."""
+        if not all(isinstance(body, EphemerisBody) for body in bodies):
+            raise TypeError("EphemerisBodyBatch only accepts EphemerisBody instances.")
+
+        unique_segments = []
+        segment_indices = {}
+        body_paths = []
+        for body in bodies:
+            path = []
+            for segment, sign in zip(body.segments, body.signs):
+                identity = id(segment)
+                if identity not in segment_indices:
+                    segment_indices[identity] = len(unique_segments)
+                    unique_segments.append(segment)
+                path.append((segment_indices[identity], sign))
+            body_paths.append(tuple(path))
+
+        groups = {}
+        for index, segment in enumerate(unique_segments):
+            signature = tuple(
+                (leaf.shape, str(leaf.dtype))
+                for leaf in jax.tree_util.tree_leaves(segment)
+            )
+            groups.setdefault(signature, []).append(index)
+
+        segment_groups = []
+        group_members = []
+        for indices in groups.values():
+            segments = [unique_segments[index] for index in indices]
+            segment_groups.append(
+                jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), *segments)
+            )
+            group_members.append(tuple(indices))
+
+        self.segment_groups = tuple(segment_groups)
+        self.group_members = tuple(group_members)
+        self.body_paths = tuple(body_paths)
+
+    @eqx.filter_jit
+    def evaluate(self, tdb_jd1: Float[Array, "..."], tdb_jd2: Float[Array, "..."], *,
+                 derivatives: bool = False):
+        """Evaluate body positions or position, velocity, and acceleration."""
+        segment_count = sum(len(members) for members in self.group_members)
+        segment_values = [None] * segment_count
+
+        for segments, members in zip(self.segment_groups, self.group_members):
+            if derivatives:
+                positions, velocities, accelerations = jax.vmap(
+                    MergedSegment.pva, in_axes=(0, None, None),
+                )(segments, tdb_jd1, tdb_jd2)
+                for position, velocity, acceleration, index in zip(
+                        positions, velocities, accelerations, members,
+                ):
+                    segment_values[index] = (position, velocity, acceleration)
+            else:
+                positions = jax.vmap(
+                    MergedSegment.pos, in_axes=(0, None, None),
+                )(segments, tdb_jd1, tdb_jd2)
+                for position, index in zip(positions, members):
+                    segment_values[index] = position
+
+        target_shape = tdb_jd1.shape + (3,)
+        if derivatives:
+            body_pva = []
+            for path in self.body_paths:
+                position = jnp.zeros(target_shape)
+                velocity = jnp.zeros(target_shape)
+                acceleration = jnp.zeros(target_shape)
+                for index, sign in path:
+                    segment_position, segment_velocity, segment_acceleration = segment_values[index]
+                    position = position + sign * segment_position
+                    velocity = velocity + sign * segment_velocity
+                    acceleration = acceleration + sign * segment_acceleration
+                body_pva.append((position / AU_KM, velocity / AU_KM, acceleration / AU_KM))
+            return tuple(jnp.stack(values) for values in zip(*body_pva))
+
+        body_positions = []
+        for path in self.body_paths:
+            position = jnp.zeros(target_shape)
+            for index, sign in path:
+                position = position + sign * segment_values[index]
+            body_positions.append(position / AU_KM)
+        return jnp.stack(body_positions)

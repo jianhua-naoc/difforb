@@ -10,6 +10,7 @@ from difforb.dynamics.force_model import (
     EmpiricalYarkovskyEffect,
     Force,
     ForceModel,
+    NewtonianGravity,
     ParametrizedForce,
     RTNDistanceLawNonGravEffect,
     SolarJ2Perturbation,
@@ -117,6 +118,32 @@ def test_compute_newtonian_acceleration_closed_form():
     )
 
     assert_allclose(actual, expected, atol=1.0e-15, rtol=0.0)
+
+
+def test_newtonian_gravity_batches_gms_without_slicing_ephemerides():
+    bodies = [
+        FakeEphemerisBody((1.0, 0.0, 0.0), gm=2.0),
+        FakeEphemerisBody((0.0, 1.0, 0.0), gm=3.0),
+    ]
+    force = NewtonianGravity(bodies)
+    batched = eqx.tree_at(
+        lambda gravity: gravity.gms,
+        force,
+        jnp.stack((force.gms, 2.0 * force.gms)),
+    )
+
+    first = batched[0]
+
+    assert batched.shape == (2,)
+    assert first.shape == ()
+    assert_allclose(first.gms, force.gms, atol=0.0, rtol=0.0)
+    assert all(
+        actual is expected
+        for actual, expected in zip(
+            jax.tree_util.tree_leaves(first.bodies),
+            jax.tree_util.tree_leaves(force.bodies),
+        )
+    )
 
 
 def test_compute_planetary_potentials_pairwise():

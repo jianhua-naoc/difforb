@@ -5,12 +5,13 @@ This module contains Newtonian point-mass gravity and the built-in point-mass ``
 
 from typing import Any, List, Tuple
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jaxtyping import Float
 
-from difforb.body.ephbody import EphemerisBody
+from difforb.body.ephbody import EphemerisBody, EphemerisBodyBatch
 from difforb.core.constants import INV_C2
 from difforb.dynamics.force_model.base import Force
 
@@ -43,8 +44,10 @@ def compute_newtonian_acceleration(r_i: Float[Array, "3"], r_others: Float[Array
 
 class NewtonianGravity(Force):
     """Point-mass gravity from a fixed list of ephemeris bodies."""
-    bodies: tuple
-    gms: tuple
+    bodies: tuple | EphemerisBodyBatch = eqx.field(
+        metadata={"batch_shared": True},
+    )
+    gms: Float[Array, "N"]
 
     def __init__(self, bodies: List[EphemerisBody]):
         """Initialize the Newtonian gravity model.
@@ -54,8 +57,12 @@ class NewtonianGravity(Force):
         bodies : list[EphemerisBody]
             Perturbing bodies.
         """
-        self.bodies = tuple(bodies)
-        self.gms = tuple(b.gm for b in self.bodies) if bodies else ()
+        self.gms = jnp.asarray([body.gm for body in bodies])
+        self.bodies = (
+            EphemerisBodyBatch(bodies)
+            if all(isinstance(body, EphemerisBody) for body in bodies)
+            else tuple(bodies)
+        )
 
     def __call__(self, tdb_jd1: Float[Array, ""], tdb_jd2: Float[Array, ""], state: Tuple[Float[Array, "3"], Float[Array, "3"]],
                  args) -> Float[Array, "3"]:
@@ -76,14 +83,18 @@ class NewtonianGravity(Force):
             Acceleration in ``au / day^2``.
         """
         pos, _ = state
-        pos_list = [b._bcrs_pos_jd(tdb_jd1, tdb_jd2) for b in self.bodies]
-        pos_others = jnp.stack(pos_list, axis=0)
-        return compute_newtonian_acceleration(pos, pos_others, jnp.array(self.gms))
+        if isinstance(self.bodies, EphemerisBodyBatch):
+            pos_others = self.bodies.evaluate(tdb_jd1, tdb_jd2)
+        else:
+            pos_others = jnp.stack([
+                body._bcrs_pos_jd(tdb_jd1, tdb_jd2) for body in self.bodies
+            ])
+        return compute_newtonian_acceleration(pos, pos_others, self.gms)
 
     @property
     def shape(self):
         """Return the batch shape."""
-        return ()
+        return self.gms.shape[:-1]
 
 
 @jax.jit
@@ -202,8 +213,10 @@ def compute_ppn_acceleration(
 
 class PPNGravity(Force):
     """Post-Newtonian gravity from a fixed list of ephemeris bodies."""
-    bodies: tuple
-    gms: tuple
+    bodies: tuple | EphemerisBodyBatch = eqx.field(
+        metadata={"batch_shared": True},
+    )
+    gms: Float[Array, "N"]
 
     def __init__(self, bodies: List[EphemerisBody]):
         """Initialize the parametrized post-Newtonian gravity model.
@@ -217,8 +230,12 @@ class PPNGravity(Force):
         ----------
         1. Urban, S. E., & Seidelmann, P. K. (2012). Explanatory Supplement to the Astronomical Almanac. Sec. 8.3.1.
         """
-        self.bodies = tuple(bodies)
-        self.gms = tuple(b.gm for b in self.bodies) if bodies else ()
+        self.gms = jnp.asarray([body.gm for body in bodies])
+        self.bodies = (
+            EphemerisBodyBatch(bodies)
+            if all(isinstance(body, EphemerisBody) for body in bodies)
+            else tuple(bodies)
+        )
 
     def __call__(self, tdb_jd1: Float[Array, ""], tdb_jd2: Float[Array, ""], state: Tuple[Float[Array, "3"], Float[Array, "3"]],
                  args) -> Float[Array, "3"]:
@@ -239,15 +256,22 @@ class PPNGravity(Force):
             Acceleration in ``au / day^2``.
         """
         pos, vel = state
-        pva = [b._bcrs_pva_jd(tdb_jd1, tdb_jd2) for b in self.bodies]
-        pos_others = jnp.stack([p[0] for p in pva], axis=0)
-        vel_others = jnp.stack([p[1] for p in pva], axis=0)
-        acc_others = jnp.stack([p[2] for p in pva], axis=0)
-        mu_others = jnp.array(self.gms)
+        if isinstance(self.bodies, EphemerisBodyBatch):
+            pos_others, vel_others, acc_others = self.bodies.evaluate(
+                tdb_jd1, tdb_jd2, derivatives=True,
+            )
+        else:
+            pva = [
+                body._bcrs_pva_jd(tdb_jd1, tdb_jd2) for body in self.bodies
+            ]
+            pos_others = jnp.stack([values[0] for values in pva])
+            vel_others = jnp.stack([values[1] for values in pva])
+            acc_others = jnp.stack([values[2] for values in pva])
+        mu_others = self.gms
         phi_planetary = compute_planetary_potentials(pos_others, mu_others)
         return compute_ppn_acceleration(pos, vel, pos_others, vel_others, acc_others, mu_others, phi_planetary)
 
     @property
     def shape(self):
         """Return the batch shape."""
-        return ()
+        return self.gms.shape[:-1]
