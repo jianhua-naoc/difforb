@@ -60,7 +60,7 @@ The fields mean:
 Possible `termination_reason` values are:
 
 - `correction_converged`: the undamped correction norm in the normal-matrix metric fell below the fixed threshold `1e-3` on an accepted step.
-- `rms_stagnated`: weighted residual RMS failed to decrease sufficiently for six consecutive accepted steps; the correction norm need not meet its threshold.
+- `rms_stagnated`: weighted residual RMS failed to decrease sufficiently for ten consecutive accepted steps; the correction norm need not meet its threshold.
 - `rms_increasing`: the insufficient-decrease limit was reached and the final RMS increased by more than 10 percent; this is a failed fit.
 - `max_iter_reached`: the solver reached the maximum accepted iteration count.
 - `damping_failed`: no damped trial step could be accepted.

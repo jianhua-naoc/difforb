@@ -165,9 +165,7 @@ This example uses one short DC stage. For a real fit, set `incremental_arc_days`
 - `iod_strategy`: the settings for the initial orbit stage.
 - `dc_strategy`: the staged differential-correction arc settings.
 - `photocenter_correction`: optional `PhotocenterCorrection` object for comet optical photocenter correction.
-- `event_handler`: optional callback that receives solver events.
-- `log_detail`: minimum event detail passed to `event_handler`. The choices are `"quiet"`, `"summary"`, `"iter"`, and `"trial"`.
-- `event_logger`: optional structured event logger. Simple calls leave it unset.
+- `verbose`: set `True` to print workflow and solver progress, set `False` to disable it, or pass a callback that accepts an event name and keyword data.
 
 ```python
 od_result = solver.solve(
@@ -179,7 +177,7 @@ od_result = solver.solve(
     outlier_policy=outlier_policy,
     iod_strategy=iod_strategy,
     dc_strategy=dc_strategy,
-    log_detail="quiet",
+    verbose=False,
 )
 
 dc_result = od_result.dc_result

@@ -109,9 +109,10 @@ For repeated fits, enable whole-solver compilation with `DCSolver(solver_jit=Tru
 - `debias_policy`: the rule that applies astrometric debias corrections.
 - `outlier_policy`: the rule that controls automatic rejection and manual inlier/outlier settings.
 - `photocenter_correction`: optional `PhotocenterCorrection` object for comet optical photocenter correction.
-- `event_handler`: optional callback that receives solver events.
-- `log_detail`: minimum event detail passed to `event_handler`. The choices are `"quiet"`, `"summary"`, `"iter"`, and `"trial"`. Use `"quiet"` when you only need the final result.
-- `event_logger`: optional structured event logger. Simple calls leave it unset.
+- `verbose`: set `True` to print solver progress, leave `False` for no progress output, or pass a callback that accepts an event name and keyword data.
+- `device`: optional JAX device that receives the numerical arrays.
+- `grid`: whether sequence-valued strategy arguments form a Cartesian product instead of using point-wise broadcasting.
+- `batch_size`: optional maximum number of compatible strategies in one mapped solve.
 
 It returns a `DCResult`. The result stores the fitted orbit, residual blocks, outlier counts, and least-squares
 diagnostics.
@@ -125,7 +126,7 @@ result = dc.solve(
     weight_policy,
     debias_policy,
     outlier_policy,
-    log_detail="quiet",
+    verbose=False,
 )
 
 orbit = result.estimate.orbit
@@ -158,9 +159,57 @@ POS_AU [-1.106644219, -0.13528989, -0.039702689]
 VEL_AU_PER_D [0.014502814, -0.011577568, -0.00660712]
 ```
 
-Convergence settings are fixed: `delnor < 1e-3` or six consecutive accepted steps with less than 0.1 percent RMS decrease. The same settings apply before and after outlier rejection.
+Convergence settings are fixed: `delnor < 1e-3` or ten consecutive accepted steps with less than 0.01 percent RMS decrease. The same settings apply before and after outlier rejection.
 
 A converged solve reports `correction_converged` when the correction norm met its threshold, or `rms_stagnated` when RMS stopped improving under the fixed stopping policy. Iteration counts can differ with solver versions and numerical precision. For uncertainty fields and orbit conversion, see [Inspect Differential Correction Results](inspect-differential-correction-results.md).
+
+## 4. Run a strategy batch on a selected device
+
+Sequence-valued force models, weight policies, or outlier policies request a strategy batch. Scalar arguments are
+broadcast across the batch. With the default `grid=False`, sequence arguments are paired point by point and must have
+length one or a common batch length.
+
+The following call compares two weight policies on one orbit-estimation problem and places the numerical work on the
+first JAX GPU:
+
+```python
+import jax
+
+from difforb.astrometry import UnitWeightPolicy
+
+gpu = jax.devices("gpu")[0]
+batch_dc = DCSolver(
+    lsq_max_iters=8,
+    solver_jit=True,
+    sun=sun,
+    earth=earth,
+)
+
+batch_results = batch_dc.solve(
+    obs,
+    initial_orbit,
+    force_model,
+    integrator,
+    [VFCC17WeightPolicy(), UnitWeightPolicy()],
+    debias_policy,
+    outlier_policy,
+    verbose=False,
+    device=gpu,
+    batch_size=2,
+)
+
+print(batch_results.shape)
+print([float(item.normalized_residual_rms) for item in batch_results])
+```
+
+The result is a NumPy object array with shape `(2,)`, and each element is a `DCResult`. With `solver_jit=True`,
+compatible strategies are mapped together. `batch_size` bounds the number of strategies in each mapped solve and can
+reduce peak device memory. Keep `verbose=False` when mapped execution is required, because live progress callbacks use
+the host-driven path.
+
+Set `grid=True` to evaluate the Cartesian product of multiple force-model, weight-policy, or outlier-policy sequences.
+The returned object array preserves that strategy-grid shape. Passing `device=jax.devices("cpu")[0]` uses the same API
+for an explicitly selected CPU device.
 
 ## Verification
 

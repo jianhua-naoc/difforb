@@ -33,13 +33,11 @@ photocenter = PhotocenterCorrection(
 
 print("PARAM_NAMES", photocenter.get_estimated_param_names())
 print("PARAM_INIT", photocenter.get_estimated_params().tolist())
-print("PARAM_SCALE", photocenter.get_estimated_param_scales().tolist())
 ```
 
 ```text title="Output"
 PARAM_NAMES ['S0']
 PARAM_INIT [0.0]
-PARAM_SCALE [1000.0]
 ```
 
 The `s0` argument is the initial `S0` value in `km`. To use a fixed value, set `estimate=False`.
@@ -58,7 +56,7 @@ result = dc.solve(
     debias_policy,
     outlier_policy,
     photocenter_correction=photocenter,
-    log_detail="quiet",
+    verbose=False,
 )
 
 print("PARAM_NAMES", result.estimate.model_param_names)

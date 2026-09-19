@@ -159,7 +159,7 @@ first_result = solver.solve(
     outlier_policy=make_outlier_policy(),
     iod_strategy=iod_strategy,
     dc_strategy=dc_strategy,
-    log_detail="quiet",
+    verbose=False,
 )
 
 first_dc = first_result.dc_result
@@ -223,7 +223,7 @@ final_result = solver.solve(
     outlier_policy=make_outlier_policy(),
     iod_strategy=iod_strategy,
     dc_strategy=dc_strategy,
-    log_detail="quiet",
+    verbose=False,
 )
 
 final_dc = final_result.dc_result

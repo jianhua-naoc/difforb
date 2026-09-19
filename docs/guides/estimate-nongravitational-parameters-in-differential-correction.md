@@ -75,7 +75,7 @@ result = dc.solve(
     weight_policy,
     debias_policy,
     outlier_policy,
-    log_detail="quiet",
+    verbose=False,
 )
 
 print("NORMALIZED_RESIDUAL_RMS", f"{result.normalized_residual_rms:.6f}")

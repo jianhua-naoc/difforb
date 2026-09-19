@@ -26,14 +26,6 @@
 
 ::: difforb.od.RadarResult
 
-::: difforb.od.RunLogHandler
+::: difforb.od.SolverReporter
 
-::: difforb.od.SolverEvent
-
-::: difforb.od.SolverEventHandler
-
-::: difforb.od.SolverEventLogger
-
-::: difforb.od.SolverLogDetail
-
-::: difforb.od.CompositeSolverEventHandler
+::: difforb.od.solver_progress_reporter
