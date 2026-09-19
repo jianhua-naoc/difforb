@@ -12,7 +12,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from jax import Array
-from jaxtyping import Float
+from jaxtyping import Bool, Float, Int
 from jax.typing import ArrayLike
 
 from difforb.dynamics.two_body import kepler_propagate, lambert_solver
@@ -161,7 +161,13 @@ def double_r_iod(site_pos: Float[Array, "N 3 3"],
     # -------------------------------------------------------------------------
     # Step 3: Iterate on the first and third ranges
     # -------------------------------------------------------------------------
-    def iteration_body(carry):
+    IterationCarry = tuple[
+        Int[Array, ""],
+        Float[Array, "N 2"],
+        Float[Array, "N"],
+    ]
+
+    def iteration_body(carry: IterationCarry) -> IterationCarry:
         iteration_idx, rho13, _ = carry
         residual_uv = residual_func(rho13)
         residual_norm = jnp.linalg.norm(residual_uv, axis=-1)
@@ -175,7 +181,7 @@ def double_r_iod(site_pos: Float[Array, "N 3 3"],
         next_rho13 = jnp.maximum(next_rho13, min_rho)
         return iteration_idx + 1, next_rho13, residual_norm
 
-    def iteration_cond(carry):
+    def iteration_cond(carry: IterationCarry) -> Bool[Array, ""]:
         iteration_idx, _, residual_norm = carry
         return jnp.logical_and(jnp.max(residual_norm) > tol, iteration_idx < max_iter)
 

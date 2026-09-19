@@ -1,7 +1,7 @@
 """User-facing orbit-determination solvers, result objects, and policies."""
 
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from difforb.od.analysis import ODAnalysis
@@ -14,14 +14,6 @@ if TYPE_CHECKING:
     )
     from difforb.od.dc.solver import DCSolver
     from difforb.astrometry.reduction.photocenter import PhotocenterCorrection
-    from difforb.od.events import (
-        CompositeSolverEventHandler,
-        RunLogHandler,
-        SolverEvent,
-        SolverEventHandler,
-        SolverEventLogger,
-        SolverLogDetail,
-    )
     from difforb.od.iod.result import IODResult
     from difforb.od.iod.solver import IODSolver
     from difforb.od.od import (
@@ -39,12 +31,12 @@ if TYPE_CHECKING:
         CompiledOutlierPolicy,
         InteractiveOutlierPolicy,
     )
+    from difforb.od.progress import SolverReporter
     from difforb.od.result import DCStageRecord, ODResult
 
 _EXPORTS = {
     "Chi2OutlierRejecter": ("difforb.od.outlier", "Chi2OutlierRejecter"),
     "CompiledOutlierPolicy": ("difforb.od.outlier", "CompiledOutlierPolicy"),
-    "CompositeSolverEventHandler": ("difforb.od.events", "CompositeSolverEventHandler"),
     "DCEstimate": ("difforb.od.dc", "DCEstimate"),
     "DCResult": ("difforb.od.dc", "DCResult"),
     "DCSolver": ("difforb.od.dc", "DCSolver"),
@@ -65,19 +57,17 @@ _EXPORTS = {
     "PhotocenterCorrection": ("difforb.astrometry.reduction.photocenter", "PhotocenterCorrection"),
     "RadarResult": ("difforb.od.dc", "RadarResult"),
     "RejResult": ("difforb.od.outlier", "RejResult"),
-    "RunLogHandler": ("difforb.od.events", "RunLogHandler"),
-    "SolverEvent": ("difforb.od.events", "SolverEvent"),
-    "SolverEventHandler": ("difforb.od.events", "SolverEventHandler"),
-    "SolverEventLogger": ("difforb.od.events", "SolverEventLogger"),
-    "SolverLogDetail": ("difforb.od.events", "SolverLogDetail"),
+    "SolverReporter": ("difforb.od.progress", "SolverReporter"),
+    "print_solver_progress": ("difforb.od.progress", "print_solver_progress"),
     "recenter_orbit_to_dc_epoch": ("difforb.od.od", "recenter_orbit_to_dc_epoch"),
     "select_dc_stage_observations": ("difforb.od.od", "select_dc_stage_observations"),
+    "solver_progress_reporter": ("difforb.od.progress", "solver_progress_reporter"),
 }
 
 __all__ = sorted(_EXPORTS)
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     if name in _EXPORTS:
         module_name, attr_name = _EXPORTS[name]
         value = getattr(import_module(module_name), attr_name)

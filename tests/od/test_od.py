@@ -63,10 +63,9 @@ class FakeDCSolver:
             outlier_policy,
             *,
             photocenter_correction=None,
-            event_logger=None,
+            verbose=False,
             **kwargs,
     ):
-        stage = None if event_logger is None else event_logger.context.get("stage")
         self.calls.append(
             {
                 "data": data,
@@ -77,7 +76,7 @@ class FakeDCSolver:
                 "debias_policy": debias_policy,
                 "outlier_policy": outlier_policy,
                 "photocenter_correction": photocenter_correction,
-                "stage": stage,
+                "verbose": verbose,
                 "kwargs": kwargs,
             }
         )
@@ -240,7 +239,7 @@ def solve_od(obs, iod_solver, dc_solver, dc_strategy, weight_policy=None):
             init_rho=(1.5, 2.5),
         ),
         dc_strategy=dc_strategy,
-        log_detail="quiet",
+        verbose=False,
     )
     return result, force_model
 
@@ -272,7 +271,7 @@ def test_od_solver_runs_staged_workflow():
     assert iod_solver.calls[0]["arc_days"] == 4.0
     assert iod_solver.calls[0]["max_candidates"] == 5
     assert iod_solver.calls[0]["init_rho"] == (1.5, 2.5)
-    assert [call["stage"] for call in dc_solver.calls] == [1, 2]
+    assert [call["verbose"] for call in dc_solver.calls] == [False, False]
     assert [len(call["data"]) for call in dc_solver.calls] == [3, 5]
     assert [record.status for record in result.dc_stage_records] == ["completed", "completed"]
     assert [record.selected_observation_count for record in result.dc_stage_records] == [3, 5]

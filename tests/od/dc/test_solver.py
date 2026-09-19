@@ -1,3 +1,5 @@
+from copy import copy
+
 import jax
 
 jax.config.update("jax_enable_x64", True)
@@ -27,6 +29,7 @@ from difforb.core.time.timescale import Time
 from difforb.dynamics.dynamic_system import DynamicSystem
 from difforb.integrator.integrator import NumericalIntegrator
 from difforb.od.dc.result import DCResult
+from difforb.od.dc.strategy import expand_dc_strategies
 from difforb.od.dc.solver import DCSolver
 from difforb.od.outlier.policy import InteractiveOutlierPolicy
 from difforb.utils import car2sph
@@ -130,7 +133,13 @@ def ground_optical_case(default_ephemeris, *, time_uncertainty_s=np.nan):
     return sun, earth, force_model, integrator, data, initial_state, expected_state
 
 
-def solve_ground_optical_case(default_ephemeris, *, time_uncertainty_s=np.nan, solver_jit=False):
+def solve_ground_optical_case(
+        default_ephemeris,
+        *,
+        time_uncertainty_s=np.nan,
+        solver_jit=False,
+        verbose=False,
+):
     sun, earth, force_model, integrator, data, initial_state, expected_state = ground_optical_case(
         default_ephemeris,
         time_uncertainty_s=time_uncertainty_s,
@@ -148,9 +157,39 @@ def solve_ground_optical_case(default_ephemeris, *, time_uncertainty_s=np.nan, s
         ADESWeightPolicy(),
         NoDebiasPolicy(),
         InteractiveOutlierPolicy(auto_rejecter=None, enable_auto_rejecter=False, max_iters=1),
-        log_detail="quiet",
+        verbose=verbose,
     )
     return result, initial_state, expected_state
+
+
+def test_strategy_arguments_preserve_scalar_and_pointwise_semantics():
+    scalar, shape, batched = expand_dc_strategies("f", "w", "o", False)
+    assert scalar == (("f", "w", "o"),)
+    assert shape == ()
+    assert not batched
+
+    pointwise, shape, batched = expand_dc_strategies(
+        ["f0", "f1"], ["w"], ["o0", "o1"], False,
+    )
+    assert pointwise == (("f0", "w", "o0"), ("f1", "w", "o1"))
+    assert shape == (2,)
+    assert batched
+
+
+def test_strategy_arguments_preserve_grid_shape_and_order():
+    strategies, shape, batched = expand_dc_strategies(
+        ["f0", "f1"], "w", ["o0", "o1", "o2"], True,
+    )
+    assert shape == (2, 3)
+    assert batched
+    assert strategies == (
+        ("f0", "w", "o0"),
+        ("f0", "w", "o1"),
+        ("f0", "w", "o2"),
+        ("f1", "w", "o0"),
+        ("f1", "w", "o1"),
+        ("f1", "w", "o2"),
+    )
 
 
 @pytest.mark.parametrize("solver_jit", [False, True])
@@ -183,7 +222,11 @@ def test_dc_solver_recovers_ground_optical_arc(default_ephemeris, solver_jit):
 
 
 def test_dc_solver_contract(default_ephemeris):
-    result, _, _ = solve_ground_optical_case(default_ephemeris)
+    events = []
+    result, _, _ = solve_ground_optical_case(
+        default_ephemeris,
+        verbose=lambda event, **data: events.append((event, data)),
+    )
     n_optical = len(OBSERVATION_OFFSETS)
     n_flat = 2 * n_optical
     n_params = 6
@@ -240,11 +283,82 @@ def test_dc_solver_contract(default_ephemeris):
     assert bool(jnp.all(jnp.isfinite(diagnostics.flat_jacobian)))
     assert bool(jnp.all(jnp.isfinite(diagnostics.flat_weights)))
     assert bool(jnp.all(jnp.isfinite(diagnostics.cov_mat_prior)))
+    base_variance = np.deg2rad(0.2 / 3600.0) ** 2
+    expected_optical_weights = np.broadcast_to(
+        np.eye(2) / base_variance,
+        diagnostics.optical_weight_matrices.shape,
+    )
+    np.testing.assert_allclose(
+        diagnostics.optical_weight_matrices,
+        expected_optical_weights,
+        rtol=1e-14,
+        atol=0.0,
+    )
     assert diagnostics.converged
     assert diagnostics.termination_reason == "correction_converged"
     assert 0 < diagnostics.lsq_iterations <= 20
     assert diagnostics.outlier_iterations >= 0
     assert np.isfinite(result.normalized_residual_rms)
+    assert events[-1][0] == "result"
+    assert events[-1][1]["termination_reason"] == diagnostics.termination_reason
+    assert events[-1][1]["inlier_count"] == n_optical
+
+
+def test_dc_solver_batches_compatible_strategies_on_requested_device(default_ephemeris):
+    sun, earth, force_model, integrator, data, initial_state, _ = ground_optical_case(default_ephemeris)
+    solver = DCSolver(
+        lsq_max_iters=20,
+        solver_jit=True,
+        sun=sun,
+        earth=earth,
+    )
+    outlier_policies = [
+        InteractiveOutlierPolicy(auto_rejecter=None, enable_auto_rejecter=False, max_iters=1),
+        InteractiveOutlierPolicy(auto_rejecter=None, enable_auto_rejecter=False, max_iters=1),
+    ]
+    force_models = [copy(force_model), copy(force_model)]
+    assert force_models[0] is not force_models[1]
+    cpu = jax.devices("cpu")[0]
+
+    scalar = solver.solve(
+        data,
+        initial_state,
+        force_model,
+        integrator,
+        ADESWeightPolicy(),
+        NoDebiasPolicy(),
+        outlier_policies[0],
+        device=cpu,
+    )
+    batched = solver.solve(
+        data,
+        initial_state,
+        force_models,
+        integrator,
+        [ADESWeightPolicy(), ADESWeightPolicy()],
+        NoDebiasPolicy(),
+        outlier_policies,
+        device=cpu,
+        batch_size=2,
+    )
+
+    assert isinstance(batched, np.ndarray)
+    assert batched.dtype == object
+    assert batched.shape == (2,)
+    assert len(batched) == 2
+    assert jnp.array_equal(batched[0].estimate.orbit.array, batched[1].estimate.orbit.array)
+    assert jnp.array_equal(
+        batched[0].lsq_diagnostics.flat_jacobian,
+        batched[1].lsq_diagnostics.flat_jacobian,
+    )
+    assert jnp.allclose(batched[0].estimate.orbit.array, scalar.estimate.orbit.array, rtol=0.0, atol=1e-11)
+    assert np.isclose(
+        batched[0].normalized_residual_rms,
+        scalar.normalized_residual_rms,
+        rtol=0.0,
+        atol=1e-8,
+    )
+    assert batched[0].estimate.orbit.array.device == cpu
 
 
 def test_dc_solver_applies_optical_time_uncertainty_weights(default_ephemeris):

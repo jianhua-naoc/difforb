@@ -163,7 +163,7 @@ class IODSolver:
     returns the solution with the smallest full-window angular score.
     """
 
-    def __init__(self, max_iter: int = 30, tol: float = 1e-10):
+    def __init__(self, max_iter: int = 30, tol: float = 1e-10) -> None:
         """Initialize an initial-orbit-determination solver.
 
         Parameters

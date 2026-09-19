@@ -50,24 +50,6 @@ class ParametrizedForce(Force):
         pass
 
     @abstractmethod
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """
-        Return characteristic scales for the estimated parameters.
-
-        The scales are multiplicative parameter increments in the same units as
-        :meth:`get_estimated_params`. Solvers can use them to normalize model
-        parameters before forming least-squares or trust-region steps. Each
-        concrete parametrized force must provide scales that match its
-        estimated-parameter ordering.
-
-        Returns
-        -------
-        Float[Array, "N_estimated"]
-            Characteristic scales for each estimated parameter.
-        """
-        pass
-
-    @abstractmethod
     def update_estimated_params(self, new_params: Float[Array, "N_estimated"]) -> 'ParametrizedForce':
         """Return a new ``ParametrizedForce`` instance with updated estimated parameters."""
         pass

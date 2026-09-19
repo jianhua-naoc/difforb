@@ -1,5 +1,5 @@
 from functools import partial
-from typing import NamedTuple, Tuple
+from typing import NamedTuple
 
 import equinox as eqx
 import jax
@@ -63,11 +63,19 @@ def _sky_plane_rates(
 class PrecomputedSite(BatchableObject):
     bcrs_state: State
 
-    def state(self, t_obs, frame: Frame = BCRS, *, sun=None, earth=None, grid=False):
+    def state(
+            self,
+            t_obs: Time,
+            frame: Frame = BCRS,
+            *,
+            sun: EphemerisBody | None = None,
+            earth: EphemerisBody | None = None,
+            grid: bool = False,
+    ) -> State:
         return self.bcrs_state
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, ...]:
         return self.bcrs_state.shape
 
 
@@ -87,12 +95,19 @@ class AstrometryMeasurementModel(NamedTuple):
     radar_types: Int[Array, "N_radar_obs"]
     sun: EphemerisBody
     earth: EphemerisBody
-    shapiro_bodies: Tuple
+    shapiro_bodies: tuple[EphemerisBody, ...]
     photocenter_correction: PhotocenterCorrection
 
     @classmethod
-    def build(cls, data: ObservationData, epoch_tdb: TDBView, sun: EphemerisBody, earth: EphemerisBody,
-              debias_result: DebiasResult, photocenter_correction: PhotocenterCorrection | None = None):
+    def build(
+            cls,
+            data: ObservationData,
+            epoch_tdb: TDBView,
+            sun: EphemerisBody,
+            earth: EphemerisBody,
+            debias_result: DebiasResult,
+            photocenter_correction: PhotocenterCorrection | None = None,
+    ) -> "AstrometryMeasurementModel":
         if photocenter_correction is None:
             photocenter_correction = PhotocenterCorrection()
         t_start = (data.t_start - 50.0).tdb()

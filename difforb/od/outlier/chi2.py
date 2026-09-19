@@ -14,7 +14,7 @@ jax.config.update("jax_enable_x64", True)
 def compute_individual_chi2_2d_single(residual: Float[Array, "2"], jac: Float[Array, "2 N_param"],
                                       cov_mat: Float[Array, "N_param N_param"],
                                       measure_var: Float[Array, "2"],
-                                      is_inlier: bool):
+                                      is_inlier: bool) -> Float[Array, ""]:
     # 1. Measurement covariance matrix
     measure_cov_mat = jnp.diag(measure_var)
     # 2. Covariance matrix propagated from least-squares fitting
@@ -31,7 +31,7 @@ def compute_individual_chi2_2d_single(residual: Float[Array, "2"], jac: Float[Ar
 def compute_individual_chi2_2d_cov_single(residual: Float[Array, "2"], jac: Float[Array, "2 N_param"],
                                           cov_mat: Float[Array, "N_param N_param"],
                                           measure_cov: Float[Array, "2 2"],
-                                          is_inlier: bool):
+                                          is_inlier: bool) -> Float[Array, ""]:
     # 1. Covariance matrix propagated from least-squares fitting
     modified_term = jac @ cov_mat @ jac.T
     # 2. Covariance matrix of residuals
@@ -45,7 +45,7 @@ def compute_individual_chi2_2d_cov_single(residual: Float[Array, "2"], jac: Floa
 
 def compute_individual_chi2_1d_single(residual: Float[Array, "1"], jac_row: Float[Array, "N_param"],
                                       cov_mat: Float[Array, "N_param N_param"], measure_var: Float[Array, "1"],
-                                      is_inlier: bool):
+                                      is_inlier: bool) -> Float[Array, "1"]:
     # 1. Variance propagated from least-squares fitting
     modified_term = jnp.dot(jac_row, jnp.dot(cov_mat, jac_row))
     # 2. Variance of residuals
@@ -126,7 +126,8 @@ def update_inlier_mask(current_inlier_mask: Bool[Array, "N_obs"],
                        chi2: Float[Array, "N_obs"],
                        chi2_rej: Float[ArrayLike, ""],
                        chi2_rec: Float[ArrayLike, ""],
-                       progressive_alpha: Float[ArrayLike, ""]):
+                       progressive_alpha: Float[ArrayLike, ""],
+                       ) -> tuple[Bool[Array, "N_obs"], Float[Array, ""], Float[Array, ""]]:
     """
     Update an inlier mask with explicit rejection and recovery branches.
 
@@ -179,7 +180,7 @@ class Chi2OutlierRejecter(OutlierRejecter):
             progressive_alpha: Float[ArrayLike, ""] = 0.25,
             n_2d: int = 0,
             n_1d: int = 0,
-    ):
+    ) -> None:
         self.chi2_rej_2d = jnp.array(chi2_rej_2d, dtype=jnp.float64)
         self.chi2_rec_2d = jnp.array(chi2_rec_2d, dtype=jnp.float64)
         self.chi2_rej_1d = jnp.array(chi2_rej_1d, dtype=jnp.float64)
@@ -189,7 +190,7 @@ class Chi2OutlierRejecter(OutlierRejecter):
         self.n_1d = coerce_scalar_int("n_1d", n_1d)
 
     @staticmethod
-    def _fudge_term(n_sel):
+    def _fudge_term(n_sel: Float[ArrayLike, ""]) -> Float[Array, ""]:
         return fudge_term(n_sel)
 
     def with_observation_structure(self, n_2d: int, n_1d: int) -> 'Chi2OutlierRejecter':

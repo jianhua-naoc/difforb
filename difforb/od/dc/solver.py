@@ -1,109 +1,61 @@
-"""Differential-correction solver entry points."""
-
-from functools import partial
+"""Differential-correction solver entry point."""
 
 import jax
-import jax.numpy as jnp
 import numpy as np
-from jax import Array
-from jaxtyping import Bool, Float
 
 from difforb.astrometry.data import ObservationData, ObservationLayout
 from difforb.astrometry.debias import DebiasPolicy
 from difforb.astrometry.reduction.photocenter import PhotocenterCorrection
 from difforb.astrometry.weight import WeightPolicy
 from difforb.body.ephbody import EphemerisBody
-from difforb.body.smallbody import Orbit
-from difforb.core.element import KepElement
-from difforb.core.validate import coerce_scalar_bool
-from difforb.core.state.frame import BCRS
-from difforb.core.state.state import State
+from difforb.body.smallbody import Orbit, SmallBody
+from difforb.core.device import put_arrays
+from difforb.core.validate import coerce_scalar_bool, coerce_scalar_int
 from difforb.dynamics.force_model import ForceModel
 from difforb.integrator.integrator import NumericalIntegrator
-from difforb.od.dc.prediction import AstrometryMeasurementModel
-from difforb.od.events import SolverEventHandler, SolverEventLogger, SolverLogDetail
-from difforb.od.dc.lsq import LSQTermination, LeastSquares, RobustLeastSquares, RobustResult
-from difforb.od.dc.lsq.core import (
-    build_time_inflated_optical_weight_matrices,
-    compute_unweighted_rms,
-    whiten_residuals,
+from difforb.od.dc.strategy import (
+    dispatch_dc_strategies,
+    expand_dc_strategies,
+    prepare_dc_strategy,
 )
-from difforb.report.text import build_repr
-
-from difforb.od.dc.result import DCResult, DCEstimate, OpticalResult, RadarResult, LSQDiagnostics
+from difforb.od.dc.lsq import LeastSquares
+from difforb.od.dc.prediction import AstrometryMeasurementModel
+from difforb.od.dc.result import DCResult, build_dc_result
 from difforb.od.outlier.policy import InteractiveOutlierPolicy
+from difforb.od.progress import SolverReporter, solver_progress_reporter
+from difforb.report.text import build_repr
 
 jax.config.update("jax_enable_x64", True)
 
 
-@jax.jit
-def _compute_weighted_rms(residuals: Float[Array, "N"], weights: Float[Array, "N"],
-                          inlier_mask: Bool[Array, "N"]) -> Float[Array, ""]:
-    """Compute a report-only RMS from marginal flattened weights."""
-    used_weights = jnp.where(inlier_mask, weights, 0.)
-    return jnp.sqrt(jnp.sum(residuals * residuals * used_weights) / jnp.sum(used_weights))
-
-
-def _canonicalize_initial_orbit(initial_orbit: Orbit, sun: EphemerisBody, earth: EphemerisBody) -> State:
-    if isinstance(initial_orbit, KepElement):
-        state = initial_orbit.state()
-    elif isinstance(initial_orbit, State):
-        state = initial_orbit
-    else:
-        raise TypeError(f"Unsupported orbit type: {type(initial_orbit)}.")
-    if state.frame != BCRS:
-        state = state.to(BCRS, sun=sun, earth=earth)
-    return state
-
-
 class DCSolver:
-    """
-    Differential-correction solver built on Levenberg-Marquardt least squares.
-
-    The solver always runs through :class:`RobustLeastSquares` so that chi-square
-    diagnostics, inlier masks, and rejection statistics are produced
-    consistently. Disabling outlier rejection only skips the rejection step; it
-    does not disable robust diagnostics. When optical time uncertainties are
-    available, the solver refreshes the time-inflated optical weight matrices at
-    each least-squares linearization point from the modeled sky-plane rates.
-    Every fit uses the same fixed convergence settings: correction norm below
-    1e-3 or six accepted steps with less than 0.1 percent RMS decrease.
-    """
+    """Differential correction with optional compiled solver control flow."""
 
     def __init__(self,
                  lsq_max_iters: int = 20,
                  *,
                  solver_jit: bool = False,
                  sun: EphemerisBody | None = None,
-                 earth: EphemerisBody | None = None):
-        """
-        Create a differential-correction solver.
+                 earth: EphemerisBody | None = None) -> None:
+        """Create a differential-correction solver.
 
         Parameters
         ----------
         lsq_max_iters : int, default=20
-            Maximum number of accepted steps allowed in each least-squares solve.
+            Maximum accepted steps in each least-squares solve.
         solver_jit : bool, default=False
-            Compile the complete least-squares and outlier-rejection loops. When false, Python controls the loops around small JIT-compiled numerical kernels. Residuals, Jacobians, and orbit propagation retain their own JIT settings.
-        sun : EphemerisBody or None, optional
-            Ephemeris-backed Sun body used by the light-time and residual
-            models. If omitted, the solver resolves ``EphemerisBody("sun")``
-            during construction.
-        earth : EphemerisBody or None, optional
-            Ephemeris-backed Earth body used by the site and light-time models.
-            If omitted, the solver resolves ``EphemerisBody("earth")`` during
-            construction.
-
-        Raises
-        ------
-        ValueError
-            Raised when a numeric option falls outside its valid range.
+            Compile the complete least-squares and outlier-rejection control
+            flow. Residual, Jacobian, and propagation kernels retain their own
+            JIT settings in either mode.
+        sun, earth : EphemerisBody or None, optional
+            Ephemeris bodies used by frame conversion and measurement models.
         """
-        self.lsq_max_iter = lsq_max_iters
+        self.lsq_max_iter = coerce_scalar_int("lsq_max_iters", lsq_max_iters)
+        if self.lsq_max_iter < 0:
+            raise ValueError("`lsq_max_iters` must be nonnegative.")
         self.solver_jit = coerce_scalar_bool("solver_jit", solver_jit)
-
-        self._sun = sun if sun is not None else EphemerisBody('sun')
-        self._earth = earth if earth is not None else EphemerisBody('earth')
+        self.sun = sun if sun is not None else EphemerisBody("sun")
+        self.earth = earth if earth is not None else EphemerisBody("earth")
 
     def __repr__(self) -> str:
         return build_repr(
@@ -114,195 +66,141 @@ class DCSolver:
             ],
         )
 
-    def _build_result(self, robust_result: RobustResult, layout: ObservationLayout, initial_orbit: State,
-                      force_model: ForceModel, photocenter_correction: PhotocenterCorrection) -> DCResult:
-        lsq_result = robust_result.lsq_result
-        rej_result = robust_result.rej_result
-
-        params = lsq_result.params
-        model_param_names = force_model.get_all_estimated_param_names() + photocenter_correction.get_estimated_param_names()
-        estimate = DCEstimate(
-            orbit=State.from_array(initial_orbit.tdb, params[:6], BCRS),
-            model_params=params[6:],
-            model_param_names=model_param_names,
-            cov_mat_post=lsq_result.cov_mat_post,
-        )
-
-        optical_weight_matrices = jnp.asarray(lsq_result.optical_weight_matrices)
-        radar_weights = jnp.asarray(lsq_result.radar_weights)
-        flat_weights = layout.concat_to_flat_array(
-            jnp.diagonal(optical_weight_matrices, axis1=1, axis2=2),
-            radar_weights,
-        )
-        flat_optical_weights, flat_radar_weights = layout.split_flat_array(flat_weights)
-
-        optical_residuals, radar_residuals = layout.split_flat_array_to_array(lsq_result.residuals)
-        normalized_flat_residuals = whiten_residuals(
-            lsq_result.residuals,
-            optical_weight_matrices,
-            radar_weights,
-            jnp.ones_like(lsq_result.residuals, dtype=bool),
-        )
-        optical_normalized_residuals, radar_normalized_residuals = layout.split_flat_array_to_array(normalized_flat_residuals)
-
-        inlier_masks = layout.flat_mask_to_mask(rej_result.flat_inlier_mask)
-        flat_optical_inliers, flat_radar_inliers = layout.split_flat_array(rej_result.flat_inlier_mask)
-        optical_inliers, radar_inliers = layout.split_array(inlier_masks)
-        optical_metrics, radar_metrics = layout.split_array(rej_result.metric)
-
-        optical_weighted_rms = float(
-            _compute_weighted_rms(optical_residuals.ravel(), flat_optical_weights, flat_optical_inliers))
-        is_delay_mask = layout.data.radar.is_delay
-        is_doppler_mask = layout.data.radar.is_doppler
-        radar_delay_weighted_rms = float(
-            _compute_weighted_rms(radar_residuals, flat_radar_weights, flat_radar_inliers & is_delay_mask
-                                  ))
-        radar_doppler_weighted_rms = float(
-            _compute_weighted_rms(radar_residuals, flat_radar_weights, flat_radar_inliers & is_doppler_mask))
-
-        optical_unweighted_rms = float(compute_unweighted_rms(optical_residuals.ravel(), flat_optical_inliers))
-        radar_delay_unweighted_rms = float(compute_unweighted_rms(radar_residuals, flat_radar_inliers & is_delay_mask))
-        radar_doppler_unweighted_rms = float(compute_unweighted_rms(radar_residuals, flat_radar_inliers & is_doppler_mask))
-
-        optical_result = OpticalResult(residuals=optical_residuals,
-                                       normalized_residuals=optical_normalized_residuals,
-                                       inlier_masks=optical_inliers,
-                                       metrics=optical_metrics,
-                                       weighted_rms=optical_weighted_rms,
-                                       unweighted_rms=optical_unweighted_rms)
-        radar_result = RadarResult(residuals=radar_residuals, normalized_residuals=radar_normalized_residuals,
-                                   inlier_masks=radar_inliers, metrics=radar_metrics, delay_weighted_rms=radar_delay_weighted_rms,
-                                   delay_unweighted_rms=radar_delay_unweighted_rms,
-                                   doppler_weighted_rms=radar_doppler_weighted_rms,
-                                   doppler_unweighted_rms=radar_doppler_unweighted_rms)
-
-        lsq_diagnostics = LSQDiagnostics(flat_jacobian=lsq_result.jacobian,
-                                         flat_weights=flat_weights,
-                                         optical_weight_matrices=optical_weight_matrices,
-                                         radar_weights=radar_weights,
-                                         cov_mat_prior=lsq_result.cov_mat_prior,
-                                         cov_rank=lsq_result.cov_rank,
-                                         cov_condition=lsq_result.cov_condition,
-                                         cov_valid=lsq_result.cov_valid,
-                                         converged=bool(lsq_result.converged),
-                                         termination_reason=LSQTermination(int(lsq_result.termination_code)).name,
-                                         lsq_iterations=int(robust_result.lsq_iter_num),
-                                         outlier_iterations=int(robust_result.outlier_iter_num))
-
-        return DCResult(estimate=estimate, optical=optical_result, radar=radar_result,
-                        lsq_diagnostics=lsq_diagnostics, normalized_residual_rms=float(lsq_result.normalized_residual_rms))
-
-    def solve(self, data: ObservationData, initial_orbit: Orbit, force_model: ForceModel,
-              integrator: NumericalIntegrator, weight_policy: WeightPolicy, debias_policy: DebiasPolicy,
-              outlier_policy: InteractiveOutlierPolicy, *,
+    def solve(self, data: ObservationData, initial_orbit: Orbit,
+              force_model: ForceModel | list[ForceModel] | tuple[ForceModel, ...],
+              integrator: NumericalIntegrator,
+              weight_policy: WeightPolicy | list[WeightPolicy] | tuple[WeightPolicy, ...],
+              debias_policy: DebiasPolicy,
+              outlier_policy: InteractiveOutlierPolicy | list[InteractiveOutlierPolicy] | tuple[InteractiveOutlierPolicy, ...], *,
               photocenter_correction: PhotocenterCorrection | None = None,
-              event_handler: SolverEventHandler | None = None,
-              log_detail: SolverLogDetail = "iter",
-              event_logger: SolverEventLogger | None = None) -> DCResult:
-        """
-        Run differential correction for a specific orbit-estimation problem.
+              verbose: bool | SolverReporter = False,
+              device: jax.Device | None = None,
+              grid: bool = False,
+              batch_size: int | None = None) -> DCResult | np.ndarray:
+        """Run differential correction for one orbit-estimation problem.
+
+        Scalar strategy arguments return :class:`DCResult`. Sequence-valued
+        force, weight, or outlier arguments return an object array of
+        :class:`DCResult` using point-wise broadcasting, or their Cartesian
+        product when ``grid=True``.
+        Compatible strategies use ``vmap`` when ``solver_jit=True`` and
+        progress reporting is disabled.
 
         Parameters
         ----------
         data : ObservationData
-            Observations used for the fit.
+            Observations used for every strategy.
         initial_orbit : Orbit
-            Initial orbital state used as the least-squares starting point.
-        force_model : ForceModel
-            Dynamical model when propagating the orbit, whose estimable parameters
-            are solved jointly with the orbit, if applicable.
+            Common least-squares starting orbit.
+        force_model : ForceModel or sequence of ForceModel
+            Dynamical model or models.
         integrator : NumericalIntegrator
-            Integrator used to propagate the orbit.
-        weight_policy : WeightPolicy
-            Policy for per-observation sigmas and inverse-variance weights.
+            Numerical orbit integrator.
+        weight_policy : WeightPolicy or sequence of WeightPolicy
+            Observation-weight policy or policies.
         debias_policy : DebiasPolicy
-            Policy for optical astrometric debias corrections.
-        outlier_policy : InteractiveOutlierPolicy
-            Policy for initial, manual, and statistical inlier masks.
+            Common optical-debias policy.
+        outlier_policy : InteractiveOutlierPolicy or sequence
+            Outlier policy or policies.
         photocenter_correction : PhotocenterCorrection or None, optional
-            Optional optical center-of-light correction. Estimated photocenter
-            parameters are appended after the dynamical model parameters in the
-            least-squares vector.
-        event_handler : SolverEventHandler or None, optional
-            Optional callback for least-squares and outlier-rejection events. The default host driver emits progress as the solve runs; the fully compiled driver emits final summaries after completion.
-        log_detail : {"quiet", "summary", "iter", "trial"}, default="iter"
-            Minimum solver-log detail emitted to ``event_handler``.
-        event_logger : SolverEventLogger or None, optional
-            Context-aware structured event logger shared across staged
-            differential correction.
+            Optical center-of-light model.
+        verbose : bool or callable, default=False
+            Print solver progress, or pass a callback that accepts an event
+            name and keyword data.
+        device : jax.Device or None, optional
+            Device receiving numerical arrays.
+        grid : bool, default=False
+            Use Cartesian-product strategy semantics instead of point-wise
+            broadcasting.
+        batch_size : int or None, optional
+            Maximum compatible strategies in one mapped solve.
+
         Returns
         -------
-        DCResult
-            Final differential-correction result together with residual,
-            chi-square, inlier-mask, and iteration diagnostics.
+        DCResult or numpy.ndarray
+            A scalar result, or an object array of results with the broadcast
+            or Cartesian-product strategy shape.
         """
+        reporter = solver_progress_reporter(verbose)
+        if device is not None and not isinstance(device, jax.Device):
+            raise TypeError("`device` must be a jax.Device or None.")
+        grid = coerce_scalar_bool("grid", grid)
+        if batch_size is not None:
+            batch_size = coerce_scalar_int("batch_size", batch_size)
+            if batch_size < 1:
+                raise ValueError("`batch_size` must be positive.")
+
+        strategies, result_shape, is_batched = expand_dc_strategies(
+            force_model, weight_policy, outlier_policy, grid,
+        )
         layout = ObservationLayout(data)
-
-        weight_results = weight_policy.weights(data)
-        debias_result = debias_policy.bias(data)
-        compiled_outlier_policy = outlier_policy.compiled(layout)
-
-        init_state = _canonicalize_initial_orbit(initial_orbit, self._sun, self._earth)
-        if photocenter_correction is None:
-            photocenter_correction = PhotocenterCorrection()
+        initial_state = SmallBody.create(
+            initial_orbit, sun=self.sun, earth=self.earth,
+        ).orbit0
+        photocenter = (
+            PhotocenterCorrection()
+            if photocenter_correction is None
+            else photocenter_correction
+        )
         measure_model = AstrometryMeasurementModel.build(
             data,
-            init_state.tdb,
-            self._sun,
-            self._earth,
-            debias_result,
-            photocenter_correction,
+            initial_state.tdb,
+            self.sun,
+            self.earth,
+            debias_policy.bias(data),
+            photocenter,
         )
-        res_func = partial(measure_model.compute_residuals, force_model=force_model, integrator=integrator)
-
-        init_state_params = init_state.array.squeeze()
-        init_model_params = force_model.get_all_estimated_params()
-        init_photocenter_params = photocenter_correction.get_estimated_params()
-        init_params = jnp.concatenate([init_state_params, init_model_params, init_photocenter_params])
-        radar_weights = jnp.asarray(weight_results.radar_weights)
-        has_optical_time_uncertainty = np.any(
-            np.isfinite(weight_results.optical_time_uncertainties)
-            & (weight_results.optical_time_uncertainties != 0.0)
+        initial_state_params = initial_state.array.squeeze()
+        if device is not None:
+            measure_model, integrator = put_arrays((measure_model, integrator), device)
+        prepared_strategies = tuple(
+            prepare_dc_strategy(
+                strategy, data, layout, initial_state_params, photocenter,
+            )
+            for strategy in strategies
         )
-        if has_optical_time_uncertainty:
-            base_optical_covariances = jnp.asarray(weight_results.optical_covariances)
-            optical_time_uncertainties = jnp.asarray(weight_results.optical_time_uncertainties)
-
-            def linearize_func(params):
-                jacobian, residuals, optical_rates = (
-                    measure_model.compute_jacobian_with_residuals_and_optical_rates(
-                        params, force_model, integrator,
-                    )
-                )
-                optical_weight_matrices = build_time_inflated_optical_weight_matrices(
-                    base_optical_covariances,
-                    optical_time_uncertainties,
-                    optical_rates,
-                )
-                return jacobian, residuals, optical_weight_matrices, radar_weights
-        else:
-            optical_weight_matrices = jnp.asarray(weight_results.optical_weight_matrices)
-
-            def linearize_func(params):
-                jacobian, residuals = measure_model.compute_jacobian_with_residuals(
-                    params, force_model, integrator,
-                )
-                return jacobian, residuals, optical_weight_matrices, radar_weights
-
-        model_param_scale = jnp.asarray(force_model.get_all_estimated_param_scales(), dtype=init_state_params.dtype)
-        photocenter_param_scale = jnp.asarray(photocenter_correction.get_estimated_param_scales(), dtype=init_state_params.dtype)
-        param_scale = jnp.concatenate([jnp.ones_like(init_state_params), model_param_scale, photocenter_param_scale])
-
-        lsq_solver = LeastSquares(max_iter=self.lsq_max_iter, solver_jit=self.solver_jit)
-        robust_solver = RobustLeastSquares(lsq_solver)
-        robust_lsq_result = robust_solver.solve(
-            init_params,
-            compiled_outlier_policy,
-            res_func,
-            linearize_func,
-            param_scale=param_scale,
-            event_handler=event_handler,
-            log_detail=log_detail,
-            event_logger=event_logger,
+        result_initial_state = initial_state
+        if device is not None:
+            prepared_strategies = put_arrays(prepared_strategies, device)
+            result_initial_state = put_arrays(initial_state, device)
+        least_squares = LeastSquares(
+            max_iter=self.lsq_max_iter,
+            solver_jit=self.solver_jit and reporter is None,
         )
-        return self._build_result(robust_lsq_result, layout, initial_orbit, force_model, photocenter_correction)
+
+        fitted = dispatch_dc_strategies(
+            prepared_strategies,
+            is_batched,
+            measure_model,
+            integrator,
+            least_squares,
+            batch_size,
+            reporter,
+        )
+        results = tuple(
+            build_dc_result(
+                result, layout, result_initial_state, model, photocenter,
+            )
+            for result, model in fitted
+        )
+
+        if reporter is not None:
+            for index, result in enumerate(results):
+                progress = {
+                    "termination_reason": result.lsq_diagnostics.termination_reason,
+                    "lsq_iterations": result.lsq_diagnostics.lsq_iterations,
+                    "outlier_iterations": result.lsq_diagnostics.outlier_iterations,
+                    "normalized_residual_rms": float(result.normalized_residual_rms),
+                    "inlier_count": result.optical.n_inliers + result.radar.n_inliers,
+                }
+                if is_batched:
+                    progress["index"] = index
+                reporter("result", **progress)
+
+        if not is_batched:
+            return results[0]
+
+        batch_results = np.empty(result_shape, dtype=object)
+        for index, result in enumerate(results):
+            batch_results.flat[index] = result
+        return batch_results

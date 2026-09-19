@@ -70,11 +70,6 @@ class ForceModel(BatchableObject):
         params = [f.get_estimated_params() for f in self.forces if isinstance(f, ParametrizedForce)]
         return jnp.concatenate(params, axis=-1) if params else jnp.array([])
 
-    def get_all_estimated_param_scales(self) -> Float[Array, "N_all_estimated"]:
-        """Collect all estimated parameter scales into one array."""
-        scales = [f.get_estimated_param_scales() for f in self.forces if isinstance(f, ParametrizedForce)]
-        return jnp.concatenate(scales, axis=-1) if scales else jnp.array([])
-
     def update_estimated_params(self, estimated_params: Float[Array, "N_all_estimated"]) -> 'ForceModel':
         """Return a new ``ForceModel`` instance with updated estimated parameters."""
         new_forces = []

@@ -125,24 +125,6 @@ class RTNDistanceLawNonGravEffect(ParametrizedForce):
         """
         return self.params[..., self.estimated_indices]
 
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """
-        Return characteristic scales for estimated ``RTN`` acceleration parameters.
-
-        The ``A1``, ``A2``, and ``A3`` parameters are accelerations in
-        ``au / day^2`` before radial distance-law scaling. The generic
-        ``RTN`` model uses one conservative scale for all three components;
-        specialized subclasses may override this with narrower model-specific
-        values.
-
-        Returns
-        -------
-        Float[Array, "N_estimated"]
-            Characteristic acceleration scales in ``au / day^2``.
-        """
-        param_scales = jnp.ones_like(self.params) * 1e-12
-        return param_scales[..., self.estimated_indices]
-
     def update_estimated_params(self, new_params: Float[Array, "N_estimated"]) -> 'RTNDistanceLawNonGravEffect':
         """Return a copy with new estimated acceleration parameters.
 
@@ -220,18 +202,6 @@ class CometOutgassingEffect(RTNDistanceLawNonGravEffect):
             param_prefix=param_prefix,
         )
 
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """
-        Return characteristic scales for estimated comet outgassing parameters.
-
-        Returns
-        -------
-        Float[Array, "N_estimated"]
-            Characteristic ``A1``, ``A2``, and ``A3`` scales in ``au / day^2``.
-        """
-        return jnp.ones_like(self.get_estimated_params()) * 1e-8
-
-
 class EmpiricalYarkovskyEffect(RTNDistanceLawNonGravEffect):
     """Empirical Yarkovsky-like effect represented by one transverse ``RTN`` term."""
 
@@ -258,18 +228,6 @@ class EmpiricalYarkovskyEffect(RTNDistanceLawNonGravEffect):
             param_prefix=param_prefix,
         )
 
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """
-        Return the characteristic scale for the estimated transverse acceleration.
-
-        Returns
-        -------
-        Float[Array, "N_estimated"]
-            Characteristic ``A2`` scale in ``au / day^2``.
-        """
-        return jnp.ones_like(self.get_estimated_params()) * 1e-13
-
-
 class EmpiricalRadiationPressure(RTNDistanceLawNonGravEffect):
     """Empirical solar-radiation-pressure-like effect represented by one radial ``RTN`` term."""
 
@@ -295,14 +253,3 @@ class EmpiricalRadiationPressure(RTNDistanceLawNonGravEffect):
             k=k,
             param_prefix=param_prefix,
         )
-
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """
-        Return the characteristic scale for the estimated radial acceleration.
-
-        Returns
-        -------
-        Float[Array, "N_estimated"]
-            Characteristic ``A1`` scale in ``au / day^2``.
-        """
-        return jnp.ones_like(self.get_estimated_params()) * 1e-12

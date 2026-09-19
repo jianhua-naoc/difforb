@@ -1,6 +1,7 @@
 """User-facing outlier rejection policies and result types."""
 
 from importlib import import_module
+from typing import Any
 
 _EXPORTS = {
     "Chi2OutlierRejecter": ("difforb.od.outlier.chi2", "Chi2OutlierRejecter"),
@@ -13,7 +14,7 @@ _EXPORTS = {
 __all__ = sorted(_EXPORTS)
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     if name in _EXPORTS:
         module_name, attr_name = _EXPORTS[name]
         value = getattr(import_module(module_name), attr_name)

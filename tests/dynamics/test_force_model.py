@@ -65,12 +65,10 @@ class ConstantForce(Force):
 
 class SimpleParametrizedForce(ParametrizedForce):
     params: jax.Array
-    scales: jax.Array
     param_names: tuple = eqx.field(static=True)
 
-    def __init__(self, params, scales, param_names):
+    def __init__(self, params, param_names):
         self.params = jnp.asarray(params, dtype=float)
-        self.scales = jnp.asarray(scales, dtype=float)
         self.param_names = tuple(param_names)
 
     @property
@@ -80,11 +78,8 @@ class SimpleParametrizedForce(ParametrizedForce):
     def get_estimated_params(self):
         return self.params
 
-    def get_estimated_param_scales(self):
-        return self.scales
-
     def update_estimated_params(self, new_params):
-        return SimpleParametrizedForce(new_params, self.scales, self.param_names)
+        return SimpleParametrizedForce(new_params, self.param_names)
 
     def get_estimated_param_names(self):
         return list(self.param_names)
@@ -332,13 +327,12 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
     assert force.shape == ()
     assert force.get_estimated_param_names() == ["Test_A1", "Test_A3"]
     assert_allclose(force.get_estimated_params(), jnp.asarray([1.0e-10, 3.0e-10], dtype=float), atol=0.0, rtol=0.0)
-    assert_allclose(force.get_estimated_param_scales(), jnp.asarray([1.0e-12, 1.0e-12], dtype=float), atol=0.0, rtol=0.0)
     assert_allclose(actual, expected, atol=1.0e-24, rtol=0.0)
     assert_allclose(updated.params, jnp.asarray([9.0e-10, -2.0e-10, -8.0e-10], dtype=float), atol=0.0, rtol=0.0)
 
 
 @pytest.mark.parametrize(
-    ("label", "force", "expected_names", "expected_params", "expected_scales"),
+    ("label", "force", "expected_names", "expected_params"),
     [
         (
             "outgassing",
@@ -351,7 +345,6 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
             ),
             ["Outgassing_A1", "Outgassing_A2", "Outgassing_A3"],
             [1.0e-8, 2.0e-8, 3.0e-8],
-            [1.0e-8, 1.0e-8, 1.0e-8],
         ),
         (
             "yarkovsky",
@@ -361,7 +354,6 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
             ),
             ["Yarkovsky_A2"],
             [5.0e-14],
-            [1.0e-13],
         ),
         (
             "radiation_pressure",
@@ -371,11 +363,10 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
             ),
             ["RadiationPressure_A1"],
             [7.0e-13],
-            [1.0e-12],
         ),
     ],
 )
-def test_specialized_rtn_effect_param_contracts(label, force, expected_names, expected_params, expected_scales):
+def test_specialized_rtn_effect_param_contracts(label, force, expected_names, expected_params):
     print(
         "[force_model.rtn.specialized] "
         f"label={label:<18} "
@@ -384,7 +375,6 @@ def test_specialized_rtn_effect_param_contracts(label, force, expected_names, ex
 
     assert force.get_estimated_param_names() == expected_names
     assert_allclose(force.get_estimated_params(), jnp.asarray(expected_params, dtype=float), atol=0.0, rtol=0.0)
-    assert_allclose(force.get_estimated_param_scales(), jnp.asarray(expected_scales, dtype=float), atol=0.0, rtol=0.0)
 
 
 def test_force_model_sums_forces():
@@ -409,12 +399,10 @@ def test_force_model_sums_forces():
 def test_force_model_estimated_param_contract():
     first = SimpleParametrizedForce(
         params=[1.0e-10, 2.0e-10],
-        scales=[1.0e-12, 1.0e-12],
         param_names=("F1_A", "F1_B"),
     )
     second = SimpleParametrizedForce(
         params=[3.0e-10],
-        scales=[1.0e-13],
         param_names=("F2_C",),
     )
     model = ForceModel([ConstantForce([0.0, 0.0, 0.0]), first, second])
@@ -428,5 +416,4 @@ def test_force_model_estimated_param_contract():
 
     assert model.get_all_estimated_param_names() == ["F1_A", "F1_B", "F2_C"]
     assert_allclose(model.get_all_estimated_params(), jnp.asarray([1.0e-10, 2.0e-10, 3.0e-10], dtype=float), atol=0.0, rtol=0.0)
-    assert_allclose(model.get_all_estimated_param_scales(), jnp.asarray([1.0e-12, 1.0e-12, 1.0e-13], dtype=float), atol=0.0, rtol=0.0)
     assert_allclose(updated.get_all_estimated_params(), jnp.asarray([4.0e-10, 5.0e-10, 6.0e-10], dtype=float), atol=0.0, rtol=0.0)

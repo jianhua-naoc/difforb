@@ -129,12 +129,6 @@ class PhotocenterCorrection(eqx.Module):
             return jnp.atleast_1d(self.s0)
         return jnp.array([], dtype=self.s0.dtype)
 
-    def get_estimated_param_scales(self) -> Float[Array, "N_estimated"]:
-        """Return characteristic scales for estimated photocenter parameters."""
-        if self.estimate:
-            return jnp.ones((1,), dtype=self.s0.dtype) * 1000.0
-        return jnp.array([], dtype=self.s0.dtype)
-
     def get_estimated_param_names(self) -> list[str]:
         """Return estimated photocenter parameter names."""
         return ["S0"] if self.estimate else []

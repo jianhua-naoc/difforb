@@ -3,6 +3,7 @@
 from typing import Literal, NamedTuple
 
 import numpy as np
+from jax.typing import ArrayLike
 
 from difforb.astrometry.debias import DebiasPolicy
 from difforb.astrometry.data import ObservationData
@@ -13,10 +14,9 @@ from difforb.core.time.timescale import Time
 from difforb.dynamics.force_model import ForceModel
 from difforb.integrator.integrator import NumericalIntegrator
 from difforb.od.dc.solver import DCSolver
-from difforb.od.events import (SolverEventHandler, SolverEventLogger, SolverLogDetail,
-                               print_solver_event)
 from difforb.od.iod.solver import IODSolver
 from difforb.od.outlier.policy import InteractiveOutlierPolicy
+from difforb.od.progress import SolverReporter, solver_progress_reporter
 from difforb.od.result import DCStageRecord, ODResult
 from difforb.report.text import build_repr
 
@@ -82,7 +82,7 @@ class ODSolver:
 
     def __init__(self,
                  iod_solver: IODSolver,
-                 dc_solver: DCSolver):
+                 dc_solver: DCSolver) -> None:
         """Initialize the workflow wrapper around the concrete OD solvers."""
         self.iod_solver = iod_solver
         self.dc_solver = dc_solver
@@ -101,9 +101,7 @@ class ODSolver:
               outlier_policy: InteractiveOutlierPolicy,
               iod_strategy: IODStrategy = IODStrategy(), dc_strategy: DCStrategy = DCStrategy(),
               photocenter_correction: PhotocenterCorrection | None = None,
-              event_handler: SolverEventHandler | None = None,
-              log_detail: SolverLogDetail = "iter",
-              event_logger: SolverEventLogger | None = None):
+              verbose: bool | SolverReporter = True) -> ODResult:
         """
         Execute the full orbit-determination pipeline.
 
@@ -130,15 +128,9 @@ class ODSolver:
         photocenter_correction : PhotocenterCorrection or None, optional
             Optional optical center-of-light correction passed to each
             differential-correction stage.
-        event_handler : SolverEventHandler or None, optional
-            Optional callback for differential-correction progress events. If
-            omitted, events are printed with the surrounding workflow log.
-        log_detail : {"quiet", "summary", "iter", "trial"}, default="iter"
-            Minimum differential-correction log detail emitted to ``event_handler``.
-        event_logger : SolverEventLogger or None, optional
-            Structured event logger used for staged differential-correction
-            events. If supplied, it takes precedence over ``event_handler`` and
-            ``log_detail`` for nested solver logs.
+        verbose : bool or callable, default=True
+            Print workflow and solver progress, disable progress, or pass a
+            callback that accepts an event name and keyword data.
         Returns
         -------
         ODResult
@@ -157,19 +149,21 @@ class ODSolver:
         without an epoch recentering are not recomputed.
         """
         _validate_dc_epoch_strategy(dc_strategy.epoch_strategy)
+        solver_progress_reporter(verbose)
+        write = print if verbose is True else lambda *args, **kwargs: None
 
         stage_arc_days = [float(span) for span in dc_strategy.incremental_arc_days]
         strategy_str = (
             f"IOD({iod_strategy.arc_days}d) -> "
             f"DC({len(stage_arc_days)} stages, epoch={dc_strategy.epoch_strategy})"
         )
-        print("=== Orbit Determination Pipeline ===")
-        print(f"Total observations: {len(obs)}")
-        print(f"Strategy: {strategy_str}")
-        print()
+        write("=== Orbit Determination Pipeline ===")
+        write(f"Total observations: {len(obs)}")
+        write(f"Strategy: {strategy_str}")
+        write()
 
-        print("=== Step 1: Initial Orbit Determination (IOD) ===")
-        print("Running IOD solver...")
+        write("=== Step 1: Initial Orbit Determination (IOD) ===")
+        write("Running IOD solver...")
         self.iod_solver.max_iter = int(iod_strategy.max_iterations)
         iod_result = self.iod_solver.solve(
             obs,
@@ -178,15 +172,11 @@ class ODSolver:
             iod_strategy.init_rho,
         )
         cur_orbit = iod_result.initial_orbit
-        print(f"IOD finished: iterations={iod_result.iter_num}, err={float(iod_result.err):.2E}")
-        print(repr(iod_result))
-        print()
+        write(f"IOD finished: iterations={iod_result.iter_num}, err={float(iod_result.err):.2E}")
+        write(repr(iod_result))
+        write()
 
-        print("=== Step 2: Differential Correction (DC) ===")
-        solver_logger = event_logger if event_logger is not None else SolverEventLogger(
-            event_handler if event_handler is not None else print_solver_event,
-            log_detail,
-        )
+        write("=== Step 2: Differential Correction (DC) ===")
         cur_force_model = force_model
         cur_photocenter_correction = (
             photocenter_correction if photocenter_correction is not None else PhotocenterCorrection()
@@ -221,8 +211,8 @@ class ODSolver:
                         actual_observation_arc_days=_observation_arc_days(cur_obs),
                     )
                 )
-                print(f"{stage_label} failed: arc={span:.1f} d, obs={valid_obs_num}, reason=Not enough observations")
-                print()
+                write(f"{stage_label} failed: arc={span:.1f} d, obs={valid_obs_num}, reason=Not enough observations")
+                write()
                 prev_active_mask = active_mask
                 continue
             if (
@@ -242,20 +232,20 @@ class ODSolver:
                         actual_observation_arc_days=_observation_arc_days(cur_obs),
                     )
                 )
-                print(
+                write(
                     f"{stage_label} skipped: arc={span:.1f} d, obs={valid_obs_num}, "
                     "reason=Unchanged observation mask"
                 )
-                print()
+                write()
                 continue
             if should_recenter:
                 cur_orbit, _ = recenter_orbit_to_dc_epoch(cur_orbit, stage_epoch, cur_force_model, integrator)
                 target_tdb = stage_epoch.tdb()
-                print(
+                write(
                     f"{stage_label} recentered: epoch_jd={float(np.asarray(target_tdb.jd).item()):.9f}, "
                     f"shift={recenter_days:.1f} d"
                 )
-            print(
+            write(
                 f"{stage_label} start: arc={span:.1f} d, obs={valid_obs_num}, "
                 f"epoch_jd={float(np.asarray(cur_orbit.tdb.jd).item()):.9f}"
             )
@@ -268,7 +258,7 @@ class ODSolver:
                 debias_policy,
                 outlier_policy,
                 photocenter_correction=cur_photocenter_correction,
-                event_logger=solver_logger.bind(stage=i + 1),
+                verbose=verbose,
             )
             cur_orbit = cur_cor_result.estimate.orbit
             n_force_params = cur_force_model.get_all_estimated_params().shape[-1]
@@ -288,19 +278,11 @@ class ODSolver:
                     actual_observation_arc_days=_observation_arc_days(cur_obs),
                 )
             )
-            print(
-                f"{stage_label} finished: normalized residual RMS={float(cur_cor_result.normalized_residual_rms):.5f}, "
-                f"iters={cur_cor_result.lsq_diagnostics.lsq_iterations}/{cur_cor_result.lsq_diagnostics.outlier_iterations}, "
-                f"optical obs={cur_cor_result.optical.n_inliers}/{cur_cor_result.optical.n_obs}, "
-                f"radar obs={cur_cor_result.radar.n_inliers}/{cur_cor_result.radar.n_obs}"
-            )
-            print()
+            write()
 
-        print("=== Orbit Determination Result ===")
         if cur_cor_result is None:
-            print("No final solution.")
-        else:
-            print(repr(cur_cor_result))
+            write("=== Orbit Determination Result ===")
+            write("No final solution.")
         return ODResult(
             iod_result=iod_result,
             dc_result=cur_cor_result,
@@ -480,7 +462,7 @@ def _observation_arc_days(obs: ObservationData) -> float | None:
         return None
 
 
-def _snap_to_midnight_epoch(tdb_jd) -> Time:
+def _snap_to_midnight_epoch(tdb_jd: ArrayLike) -> Time:
     """Return the nearest ``TDB`` midnight epoch with Julian-date fraction ``0.5``."""
     midnight_jd = np.floor(float(np.asarray(tdb_jd).item())) + 0.5
     midnight_jd1 = np.floor(midnight_jd)
@@ -488,7 +470,11 @@ def _snap_to_midnight_epoch(tdb_jd) -> Time:
     return Time.from_tdb_jd(midnight_jd1, midnight_jd2)
 
 
-def _select_centered_observations(obs: ObservationData, epoch: Time, span: float):
+def _select_centered_observations(
+        obs: ObservationData,
+        epoch: Time,
+        span: float,
+) -> tuple[ObservationData, tuple[np.ndarray, np.ndarray]]:
     """Return observations selected by a symmetric stage window around ``epoch``."""
     t_start = epoch - span / 2.0
     t_end = epoch + span / 2.0

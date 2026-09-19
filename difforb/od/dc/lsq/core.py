@@ -13,19 +13,20 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 from jax import Array
+from jax.typing import DTypeLike
 from jaxtyping import Bool, Float, Int
 
 from difforb.core.constants import DAY_S
 from difforb.od.outlier.outlier import RejResult
+from difforb.od.outlier.policy import CompiledOutlierPolicy
 
 jax.config.update("jax_enable_x64", True)
 
 CORRECTION_TOL = 1e-3
-MIN_RMS_DECREASE = 1e-3
-STAGNATION_STEPS = 6
+MIN_RMS_DECREASE = 1e-4
+STAGNATION_STEPS = 10
 COVARIANCE_RCOND = 1e-12
-STATE_PARAM_COUNT = 6
-STATE_PARAM_SCALE_RCOND = 1e-12
+JACOBIAN_COLUMN_SCALE_RCOND = 1e-12
 TRUST_REGION_LOW_CUTOFF = 0.01
 TRUST_REGION_HIGH_CUTOFF = 0.99
 TRUST_REGION_SHRINK = 4.0
@@ -40,6 +41,14 @@ LinearizationFunction = Callable[
         Float[Array, "N_radar"],
     ],
 ]
+
+
+class LMOptions(NamedTuple):
+    """Static configuration for Levenberg--Marquardt control flow."""
+
+    max_iter: int
+    max_damping_iter: int
+    damping_init: float
 
 
 class LSQTermination(IntEnum):
@@ -100,56 +109,64 @@ class RobustResult(NamedTuple):
 class Linearization(NamedTuple):
     """Weighted model at one accepted parameter vector."""
 
-    jacobian: Array
-    residuals: Array
-    optical_weights: Array
-    radar_weights: Array
-    design: Array
-    whitened_residuals: Array
-    step_scale: Array
-    correction_norm: Array
-    rms: Array
-    finite: Array
+    jacobian: Float[Array, "N_obs N_param"]
+    residuals: Float[Array, "N_obs"]
+    optical_weights: Float[Array, "N_optical 2 2"]
+    radar_weights: Float[Array, "N_radar"]
+    design: Float[Array, "N_obs N_param"]
+    whitened_residuals: Float[Array, "N_obs"]
+    step_scale: Float[Array, "N_param"]
+    correction_norm: Float[Array, ""]
+    rms: Float[Array, ""]
+    finite: Bool[Array, ""]
 
 
 class LMState(NamedTuple):
     """State carried between LM damping trials."""
 
-    params: Array
+    params: Float[Array, "N_param"]
     model: Linearization
-    damping: Array
-    steps: Array
-    damping_trials: Array
-    stagnant_steps: Array
-    termination_code: Array
+    damping: Float[Array, ""]
+    steps: Int[Array, ""]
+    damping_trials: Int[Array, ""]
+    stagnant_steps: Int[Array, ""]
+    termination_code: Int[Array, ""]
 
 
 class LMTrial(NamedTuple):
     """Numerical outcome of one damping trial."""
 
-    candidate: Array
-    residuals: Array
-    scaled_delta: Array
-    rms: Array
-    rho: Array
-    accepted: Array
-    next_damping: Array
-    linear_ok: Array
+    candidate: Float[Array, "N_param"]
+    residuals: Float[Array, "N_obs"]
+    scaled_delta: Float[Array, "N_param"]
+    rms: Float[Array, ""]
+    rho: Float[Array, ""]
+    accepted: Bool[Array, ""]
+    next_damping: Float[Array, ""]
+    linear_ok: Bool[Array, ""]
 
 
 class RobustState(NamedTuple):
     """State carried between compiled rejection passes."""
 
     result: LeastSquaresResult
-    mask: Array
-    valid: Array
-    done: Array
-    iterations: Array
-    solves: Array
-    total_steps: Array
+    mask: Bool[Array, "N_obs"]
+    valid: Bool[Array, ""]
+    done: Bool[Array, ""]
+    iterations: Int[Array, ""]
+    solves: Int[Array, ""]
+    total_steps: Int[Array, ""]
 
 
-def evaluate_linearization(params, linearize_func):
+def evaluate_linearization(
+        params: Float[Array, "N_param"],
+        linearize_func: LinearizationFunction,
+) -> tuple[
+    Float[Array, "N_obs N_param"],
+    Float[Array, "N_obs"],
+    Float[Array, "N_optical 2 2"],
+    Float[Array, "N_radar"],
+]:
     """Evaluate residuals, their Jacobian, and weights at one parameter vector."""
     jacobian, residuals, optical_weights, radar_weights = linearize_func(params)
     return (
@@ -179,22 +196,35 @@ def build_time_inflated_optical_weight_matrices(
     return jnp.linalg.inv(covariances)
 
 
-def flat_inlier_mask_to_observation_mask(flat_inlier_mask, n_2d):
+def flat_inlier_mask_to_observation_mask(
+        flat_inlier_mask: Bool[Array, "N_flat_obs"],
+        n_2d: int,
+) -> Bool[Array, "N_obs"]:
     """Convert a flat residual mask to one mask value per observation."""
     optical = flat_inlier_mask[:2 * n_2d].reshape((n_2d, 2)).all(axis=1)
     return jnp.concatenate([optical, flat_inlier_mask[2 * n_2d:]])
 
 
-def _optical_observation_mask(inlier_mask, n_2d):
+def _optical_observation_mask(
+        inlier_mask: Bool[Array, "N_flat_obs"],
+        n_2d: int,
+) -> Bool[Array, "N_optical"]:
     return jnp.all(inlier_mask[:2 * n_2d].reshape((n_2d, 2)), axis=1)
 
 
-def _weight_cholesky_factor(optical_weight_matrices):
+def _weight_cholesky_factor(
+        optical_weight_matrices: Float[Array, "N_optical 2 2"],
+) -> Float[Array, "N_optical 2 2"]:
     return jnp.swapaxes(jnp.linalg.cholesky(optical_weight_matrices), -1, -2)
 
 
 @jax.jit
-def whiten_residuals(residuals, optical_weight_matrices, radar_weights, inlier_mask):
+def whiten_residuals(
+        residuals: Float[Array, "N_flat_obs"],
+        optical_weight_matrices: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, "N_flat_obs"]:
     """Apply block square-root weights and the fixed inlier mask."""
     n_2d = optical_weight_matrices.shape[0]
     n_flat_2d = 2 * n_2d
@@ -208,7 +238,12 @@ def whiten_residuals(residuals, optical_weight_matrices, radar_weights, inlier_m
 
 
 @jax.jit
-def whiten_design_matrix(design, optical_weight_matrices, radar_weights, inlier_mask):
+def whiten_design_matrix(
+        design: Float[Array, "N_flat_obs N_param"],
+        optical_weight_matrices: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, "N_flat_obs N_param"]:
     """Apply block square-root weights and the fixed inlier mask to a Jacobian."""
     n_2d = optical_weight_matrices.shape[0]
     n_flat_2d = 2 * n_2d
@@ -221,41 +256,40 @@ def whiten_design_matrix(design, optical_weight_matrices, radar_weights, inlier_
     return jnp.concatenate([optical, radar])
 
 
-def _lsq_param_scale_from_design(design, base_param_scale):
-    """Combine automatic state scaling with model-provided parameter scales."""
+def _jacobian_column_scale(
+        design: Float[Array, "N_flat_obs N_param"],
+) -> Float[Array, "N_param"]:
+    """Build column-normalization factors from the weighted Jacobian."""
     col_norms = jnp.sqrt(jnp.sum(design * design, axis=0))
-    safe_base = jnp.where(jnp.isfinite(base_param_scale) & (base_param_scale > 0.0), base_param_scale, 1.0)
-    state_count = min(STATE_PARAM_COUNT, design.shape[1])
-    state_norms = col_norms[:state_count]
-    finite_positive = jnp.where(jnp.isfinite(state_norms) & (state_norms > 0.0), state_norms, 0.0)
-    max_state_norm = jnp.max(finite_positive)
-    floor = max_state_norm * jnp.maximum(
-        jnp.asarray(STATE_PARAM_SCALE_RCOND, design.dtype), jnp.finfo(design.dtype).eps,
+    finite_positive = jnp.where(jnp.isfinite(col_norms) & (col_norms > 0.0), col_norms, 0.0)
+    max_norm = jnp.max(finite_positive)
+    floor = max_norm * jnp.maximum(
+        jnp.asarray(JACOBIAN_COLUMN_SCALE_RCOND, design.dtype), jnp.finfo(design.dtype).eps,
     )
-    state_scale = jnp.where(
-        max_state_norm > 0.0,
+    return jnp.where(
+        max_norm > 0.0,
         1.0 / jnp.maximum(finite_positive, floor),
-        jnp.ones_like(state_norms),
+        jnp.ones_like(col_norms),
     )
-    return safe_base.at[:state_count].set(state_scale)
 
 
 @jax.jit
-def compute_state_param_scale(A, optical_weight_matrices, radar_weights, inlier_mask):
+def compute_jacobian_column_scale(
+        jacobian: Float[Array, "N_flat_obs N_param"],
+        optical_weight_matrices: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, "N_param"]:
     """Build automatic column-norm scales from a weighted Jacobian."""
-    design = whiten_design_matrix(A, optical_weight_matrices, radar_weights, inlier_mask)
-    return _lsq_param_scale_from_design(design, jnp.ones(A.shape[1], dtype=A.dtype))
+    design = whiten_design_matrix(jacobian, optical_weight_matrices, radar_weights, inlier_mask)
+    return _jacobian_column_scale(design)
 
 
 @jax.jit
-def compute_lsq_param_scale(A, optical_weight_matrices, radar_weights, inlier_mask, base_param_scale):
-    """Combine state column-norm scales with model-provided scales."""
-    design = whiten_design_matrix(A, optical_weight_matrices, radar_weights, inlier_mask)
-    return _lsq_param_scale_from_design(design, base_param_scale)
-
-
-@jax.jit
-def compute_correction_norm(design, residuals):
+def compute_correction_norm(
+        design: Float[Array, "N_flat_obs N_param"],
+        residuals: Float[Array, "N_flat_obs"],
+) -> Float[Array, ""]:
     """Measure the undamped Gauss--Newton correction in the normal metric."""
     solution = lx.linear_solve(
         lx.MatrixLinearOperator(design), -residuals,
@@ -266,23 +300,36 @@ def compute_correction_norm(design, residuals):
 
 
 @jax.jit
-def compute_unweighted_rms(residuals, inlier_mask):
+def compute_unweighted_rms(
+        residuals: Float[Array, "N_flat_obs"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, ""]:
     """Compute RMS of selected residual components in their native units."""
     used = jnp.where(inlier_mask, residuals, 0.0)
     return jnp.sqrt(jnp.sum(used * used) / jnp.sum(inlier_mask))
 
 
 @jax.jit
-def compute_normalized_residual_rms(residuals, optical_weights, radar_weights, inlier_mask):
+def compute_normalized_residual_rms(
+        residuals: Float[Array, "N_flat_obs"],
+        optical_weights: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, ""]:
     """Compute RMS of block-whitened residuals."""
     whitened = whiten_residuals(residuals, optical_weights, radar_weights, inlier_mask)
     return jnp.sqrt(jnp.sum(whitened * whitened) / jnp.sum(inlier_mask))
 
 
 @jax.jit
-def compute_prior_covariance(A, optical_weights, radar_weights, inlier_mask):
+def compute_prior_covariance(
+        jacobian: Float[Array, "N_flat_obs N_param"],
+        optical_weights: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> PriorCovarianceResult:
     """Calculate the unscaled covariance matrix and rank diagnostics."""
-    design = whiten_design_matrix(A, optical_weights, radar_weights, inlier_mask)
+    design = whiten_design_matrix(jacobian, optical_weights, radar_weights, inlier_mask)
     _, singular_values, vt = jnp.linalg.svd(design, full_matrices=False)
     zero = jnp.asarray(0.0, design.dtype)
     inf = jnp.asarray(jnp.inf, design.dtype)
@@ -297,13 +344,19 @@ def compute_prior_covariance(A, optical_weights, radar_weights, inlier_mask):
     inverse_square = jnp.where(valid_singular, 1.0 / (safe_singular * safe_singular), 0.0)
     covariance = (vt.T * inverse_square) @ vt
     min_valid = jnp.min(jnp.concatenate([jnp.where(valid_singular, singular_values, inf), inf[None]]))
-    full_rank = rank == A.shape[1]
+    full_rank = rank == jacobian.shape[1]
     condition = jnp.where(full_rank & (rank > 0), max_singular / min_valid, inf)
     return PriorCovarianceResult(covariance, rank, condition, full_rank)
 
 
 @jax.jit
-def compute_post_cov_mat(cov_prior, residuals, optical_weights, radar_weights, inlier_mask):
+def compute_post_cov_mat(
+        cov_prior: Float[Array, "N_param N_param"],
+        residuals: Float[Array, "N_flat_obs"],
+        optical_weights: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        inlier_mask: Bool[Array, "N_flat_obs"],
+) -> Float[Array, "N_param N_param"]:
     """Scale the normal-matrix inverse by the posterior variance factor."""
     whitened = whiten_residuals(residuals, optical_weights, radar_weights, inlier_mask)
     dof = jnp.sum(inlier_mask) - cov_prior.shape[0]
@@ -316,16 +369,23 @@ def compute_post_cov_mat(cov_prior, residuals, optical_weights, radar_weights, i
 
 
 @jax.jit
-def prepare_linearization(params, jacobian, residuals, optical_weights, radar_weights, mask, base_scale):
+def prepare_linearization(
+        params: Float[Array, "N_param"],
+        jacobian: Float[Array, "N_flat_obs N_param"],
+        residuals: Float[Array, "N_flat_obs"],
+        optical_weights: Float[Array, "N_optical 2 2"],
+        radar_weights: Float[Array, "N_radar"],
+        mask: Bool[Array, "N_flat_obs"],
+) -> Linearization:
     """Build the weighted and scaled model at one accepted point."""
     whitened = whiten_residuals(residuals, optical_weights, radar_weights, mask)
     physical_design = whiten_design_matrix(jacobian, optical_weights, radar_weights, mask)
-    scale = _lsq_param_scale_from_design(physical_design, base_scale)
-    diagonal = jnp.sum(physical_design * physical_design, axis=0) * scale * scale
+    column_scale = _jacobian_column_scale(physical_design)
+    diagonal = jnp.sum(physical_design * physical_design, axis=0) * column_scale * column_scale
     floor = jnp.max(diagonal) * jnp.finfo(params.dtype).eps
     safe_diagonal = jnp.maximum(diagonal, floor)
     safe_diagonal = jnp.where(safe_diagonal > 0.0, safe_diagonal, 1.0)
-    step_scale = scale / jnp.sqrt(safe_diagonal)
+    step_scale = column_scale / jnp.sqrt(safe_diagonal)
     design = physical_design * step_scale
     rms = jnp.sqrt(jnp.sum(whitened * whitened) / jnp.sum(mask))
     finite = (
@@ -347,13 +407,21 @@ def prepare_linearization(params, jacobian, residuals, optical_weights, radar_we
 
 
 @eqx.filter_jit
-def linearize_at(params, mask, linearize, base_scale):
+def linearize_at(
+        params: Float[Array, "N_param"],
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+) -> Linearization:
     """Evaluate and prepare one accepted linearization point."""
     jacobian, residuals, optical, radar = evaluate_linearization(params, linearize)
-    return prepare_linearization(params, jacobian, residuals, optical, radar, mask, base_scale)
+    return prepare_linearization(params, jacobian, residuals, optical, radar, mask)
 
 
-def solve_damped_step(model, damping):
+@jax.jit
+def solve_damped_step(
+        model: Linearization,
+        damping: Float[Array, ""],
+) -> tuple[Float[Array, "N_param"], Bool[Array, ""]]:
     """Solve one LM step by QR on the augmented least-squares system."""
     design = lx.MatrixLinearOperator(model.design)
     structure = design.in_structure()
@@ -374,7 +442,14 @@ def solve_damped_step(model, damping):
     return scaled_delta, linear_ok
 
 
-def evaluate_trial(state, scaled_delta, linear_ok, trial_residuals, mask):
+@jax.jit
+def evaluate_trial(
+        state: LMState,
+        scaled_delta: Float[Array, "N_param"],
+        linear_ok: Bool[Array, ""],
+        trial_residuals: Float[Array, "N_flat_obs"],
+        mask: Bool[Array, "N_flat_obs"],
+) -> LMTrial:
     """Evaluate one candidate using weights frozen at the current point."""
     model = state.model
     candidate = state.params + model.step_scale * scaled_delta
@@ -401,16 +476,29 @@ def evaluate_trial(state, scaled_delta, linear_ok, trial_residuals, mask):
     return LMTrial(candidate, trial_residuals, scaled_delta, rms, rho, accepted, next_damping, linear_ok)
 
 
-@eqx.filter_jit
-def evaluate_lm_trial(state, mask, residual):
-    """Solve and evaluate one trial without refreshing the linearization."""
+def evaluate_lm_trial(
+        state: LMState,
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+) -> tuple[LMTrial, Linearization]:
+    """Evaluate a trial and retain its candidate linearization for reuse."""
     scaled_delta, linear_ok = solve_damped_step(state.model, state.damping)
     candidate = state.params + state.model.step_scale * scaled_delta
-    return evaluate_trial(state, scaled_delta, linear_ok, residual(candidate), mask)
+    candidate_model = linearize_at(candidate, mask, linearize)
+    trial = evaluate_trial(
+        state, scaled_delta, linear_ok, candidate_model.residuals, mask,
+    )
+    return trial, candidate_model
 
 
 @jax.jit
-def update_lm_state(state, trial, next_model, max_iter, max_damping_iter):
+def update_lm_state(
+        state: LMState,
+        trial: LMTrial,
+        next_model: Linearization,
+        max_iter: int,
+        max_damping_iter: int,
+) -> LMState:
     """Apply a trial outcome and the established DiffOrb stop rules."""
     accepted = trial.accepted
     steps = state.steps + accepted.astype(jnp.int32)
@@ -430,8 +518,13 @@ def update_lm_state(state, trial, next_model, max_iter, max_damping_iter):
     code = jnp.where(steps >= max_iter, LSQTermination.max_iter_reached, LSQTermination.running)
     code = jnp.where(damping_trials >= max_damping_iter, LSQTermination.damping_failed, code)
     code = jnp.where(rms_stop, rms_code, code)
+    correction_converged = state.model.correction_norm < CORRECTION_TOL
+    correction_converged |= (
+        (steps >= max_iter)
+        & (next_model.correction_norm < CORRECTION_TOL)
+    )
     code = jnp.where(
-        accepted & (state.model.correction_norm < CORRECTION_TOL),
+        accepted & correction_converged,
         LSQTermination.correction_converged,
         code,
     )
@@ -444,37 +537,50 @@ def update_lm_state(state, trial, next_model, max_iter, max_damping_iter):
     )
 
 
-def initialize_lsq(params, mask, linearize, base_scale, options):
+def initialize_lsq(
+        params: Float[Array, "N_param"],
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+        options: LMOptions,
+) -> LMState:
     """Initialize one fixed-mask fit."""
-    model = linearize_at(params, mask, linearize, base_scale)
+    model = linearize_at(params, mask, linearize)
     code = jnp.where(model.finite, LSQTermination.running, LSQTermination.nonfinite_model)
     code = jnp.where(
-        model.finite & (options["max_iter"] == 0),
+        model.finite & (options.max_iter == 0),
         LSQTermination.max_iter_reached,
         code,
     ).astype(jnp.int32)
     zero = jnp.asarray(0, jnp.int32)
     return LMState(
-        params, model, jnp.asarray(options["damping_init"], params.dtype),
+        params, model, jnp.asarray(options.damping_init, params.dtype),
         zero, zero, zero, code,
     )
 
 
-def advance_lsq(state, mask, residual, linearize, base_scale, options):
+def advance_lsq(
+        state: LMState,
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+        options: LMOptions,
+) -> LMState:
     """Evaluate one damping trial for the compiled driver."""
-    trial = evaluate_lm_trial(state, mask, residual)
+    trial, candidate_model = evaluate_lm_trial(state, mask, linearize)
     next_model = jax.lax.cond(
         trial.accepted,
-        lambda: linearize_at(trial.candidate, mask, linearize, base_scale),
+        lambda: candidate_model,
         lambda: state.model,
     )
     return update_lm_state(
-        state, trial, next_model, options["max_iter"], options["max_damping_iter"],
+        state, trial, next_model, options.max_iter, options.max_damping_iter,
     )
 
 
 @jax.jit
-def finish_lsq(state, mask):
+def finish_lsq(
+        state: LMState,
+        mask: Bool[Array, "N_flat_obs"],
+) -> LeastSquaresResult:
     """Build covariance diagnostics and the array result."""
     code = jnp.where(
         state.termination_code == LSQTermination.running,
@@ -482,7 +588,7 @@ def finish_lsq(state, mask):
         state.termination_code,
     ).astype(jnp.int32)
 
-    def covariance():
+    def covariance() -> tuple[Array, Array, Array, Array, Array]:
         prior = compute_prior_covariance(
             state.model.jacobian, state.model.optical_weights,
             state.model.radar_weights, mask,
@@ -493,7 +599,7 @@ def finish_lsq(state, mask):
         )
         return prior.cov_mat, post, prior.rank, prior.condition, prior.valid
 
-    def unavailable():
+    def unavailable() -> tuple[Array, Array, Array, Array, Array]:
         matrix = jnp.full((state.params.size, state.params.size), jnp.nan, state.params.dtype)
         return matrix, matrix, jnp.asarray(0, jnp.int64), jnp.asarray(jnp.inf, state.params.dtype), jnp.asarray(False)
 
@@ -507,39 +613,54 @@ def finish_lsq(state, mask):
 
 
 @eqx.filter_jit
-def solve_lsq(params, mask, residual, linearize, base_scale, options):
+def solve_lsq(
+        params: Float[Array, "N_param"],
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+        options: LMOptions,
+) -> LeastSquaresResult:
     """Run the complete LM loop as one JAX computation."""
-    initial = initialize_lsq(params, mask, linearize, base_scale, options)
+    initial = initialize_lsq(params, mask, linearize, options)
     final = jax.lax.while_loop(
         lambda state: state.termination_code == LSQTermination.running,
-        lambda state: advance_lsq(state, mask, residual, linearize, base_scale, options),
+        lambda state: advance_lsq(state, mask, linearize, options),
         initial,
     )
     return finish_lsq(final, mask)
 
 
-def solve_lsq_python(params, mask, residual, linearize, base_scale, options, *,
-                     initial_callback=None, trial_callback=None):
+def solve_lsq_python(
+        params: Float[Array, "N_param"],
+        mask: Bool[Array, "N_flat_obs"],
+        linearize: LinearizationFunction,
+        options: LMOptions,
+        *,
+        step_callback: Callable[..., None] | None = None,
+) -> LeastSquaresResult:
     """Drive small JIT kernels with Python control flow."""
-    state = initialize_lsq(params, mask, linearize, base_scale, options)
-    if initial_callback is not None:
-        initial_callback(state.model)
+    state = initialize_lsq(params, mask, linearize, options)
     while int(state.termination_code) == LSQTermination.running:
         previous = state
-        trial = evaluate_lm_trial(state, mask, residual)
+        trial, candidate_model = evaluate_lm_trial(state, mask, linearize)
         next_model = (
-            linearize_at(trial.candidate, mask, linearize, base_scale)
+            candidate_model
             if bool(trial.accepted) else state.model
         )
         state = update_lm_state(
-            state, trial, next_model, options["max_iter"], options["max_damping_iter"],
+            state, trial, next_model, options.max_iter, options.max_damping_iter,
         )
-        if trial_callback is not None:
-            trial_callback(previous, trial, next_model)
+        if step_callback is not None and bool(trial.accepted):
+            step_callback(
+                "least_squares_step",
+                step=int(previous.steps) + 1,
+                normalized_residual_rms=float(next_model.rms),
+                damping=float(previous.damping),
+                next_damping=float(trial.next_damping),
+            )
     return finish_lsq(state, mask)
 
 
-def valid_chi2(result):
+def valid_chi2(result: LeastSquaresResult) -> Bool[Array, ""]:
     """Return whether a fit can support covariance-based rejection."""
     return (
         result.cov_valid
@@ -551,77 +672,119 @@ def valid_chi2(result):
     )
 
 
-def _solve_robust(params, policy, residual, linearize, base_scale, options, *, compiled):
-    fit = solve_lsq if compiled else solve_lsq_python
-    mask = policy.get_init_mask()
-    result = fit(params, mask, residual, linearize, base_scale, options)
-    initial = RobustState(
-        result, mask, valid_chi2(result), jnp.asarray(False),
-        jnp.asarray(0, jnp.int32), jnp.asarray(1, jnp.int32), result.iter_num,
+def initialize_robust(
+        result: LeastSquaresResult,
+        mask: Bool[Array, "N_flat_obs"],
+) -> RobustState:
+    """Initialize robust rejection from the first fixed-mask fit."""
+    return RobustState(
+        result,
+        mask,
+        valid_chi2(result),
+        jnp.asarray(False),
+        jnp.asarray(0, jnp.int32),
+        jnp.asarray(1, jnp.int32),
+        result.iter_num,
     )
 
-    def apply(fit_result, fit_mask):
-        return policy.apply(
-            fit_result.residuals, fit_result.optical_weight_matrices,
-            fit_result.radar_weights, fit_result.jacobian,
-            fit_result.cov_mat_prior, fit_mask,
-        )
 
-    def condition(state):
-        return policy.enable_auto_rejection & state.valid & ~state.done & (state.iterations < policy.max_iters)
+def evaluate_rejection(
+        state: RobustState,
+        policy: CompiledOutlierPolicy,
+) -> RejResult:
+    """Evaluate one outlier policy at the current robust state."""
+    return policy.apply(
+        state.result.residuals,
+        state.result.optical_weight_matrices,
+        state.result.radar_weights,
+        state.result.jacobian,
+        state.result.cov_mat_prior,
+        state.mask,
+    )
 
-    def step(state):
-        rejected = apply(state.result, state.mask)
-        new_mask = rejected.flat_inlier_mask
-        changed = jnp.any(new_mask != state.mask)
 
-        def refit():
-            new_result = fit(state.result.params, new_mask, residual, linearize, base_scale, options)
-            return new_result, state.solves + 1, state.total_steps + new_result.iter_num
+@jax.jit
+def advance_robust(
+        state: RobustState,
+        rejection: RejResult,
+        next_result: LeastSquaresResult,
+) -> RobustState:
+    """Advance robust state after one rejection evaluation and optional refit."""
+    new_mask = rejection.flat_inlier_mask
+    changed = jnp.any(new_mask != state.mask)
+    return RobustState(
+        next_result,
+        new_mask,
+        valid_chi2(next_result),
+        ~changed,
+        state.iterations + 1,
+        state.solves + changed.astype(jnp.int32),
+        state.total_steps + jnp.where(changed, next_result.iter_num, 0),
+    )
 
-        if compiled:
-            new_result, solves, total_steps = jax.lax.cond(
-                changed, refit,
-                lambda: (state.result, state.solves, state.total_steps),
-            )
-        else:
-            new_result, solves, total_steps = (
-                refit() if bool(changed)
-                else (state.result, state.solves, state.total_steps)
-            )
-        return RobustState(
-            new_result, new_mask, valid_chi2(new_result), ~changed,
-            state.iterations + 1, solves, total_steps,
-        )
 
-    if compiled:
-        final = jax.lax.while_loop(condition, step, initial)
-    else:
-        final = initial
-        while bool(condition(final)):
-            final = step(final)
+def continue_robust(
+        state: RobustState,
+        policy: CompiledOutlierPolicy,
+) -> Bool[Array, ""]:
+    """Return whether another rejection pass is required."""
+    return (
+        policy.enable_auto_rejection
+        & state.valid
+        & ~state.done
+        & (state.iterations < policy.max_iters)
+    )
 
+
+def finish_robust(
+        state: RobustState,
+        policy: CompiledOutlierPolicy,
+        dtype: DTypeLike,
+) -> RobustResult:
+    """Build the final array-only robust result."""
     metric = jax.lax.cond(
-        final.valid,
-        lambda: apply(final.result, final.mask).metric,
-        lambda: jnp.full((policy.n_2d + policy.n_1d,), jnp.nan, params.dtype),
+        state.valid,
+        lambda: evaluate_rejection(state, policy).metric,
+        lambda: jnp.full((policy.n_2d + policy.n_1d,), jnp.nan, dtype),
     )
     return RobustResult(
-        final.result, RejResult(final.mask, metric),
-        final.iterations, final.total_steps,
+        state.result,
+        RejResult(state.mask, metric),
+        state.iterations,
+        state.total_steps,
     )
 
 
 @eqx.filter_jit
-def solve_robust(params, policy, residual, linearize, base_scale, options):
-    """Compile the complete robust-fit driver."""
-    return _solve_robust(
-        params, policy, residual, linearize, base_scale, options, compiled=True,
-    )
+def solve_robust(
+        params: Float[Array, "N_param"],
+        policy: CompiledOutlierPolicy,
+        linearize: LinearizationFunction,
+        options: LMOptions,
+) -> RobustResult:
+    """Drive shared robust state transitions with JAX control flow."""
+    mask = policy.get_init_mask()
+    result = solve_lsq(params, mask, linearize, options)
+    initial = initialize_robust(result, mask)
 
+    def step(state: RobustState) -> RobustState:
+        rejection = evaluate_rejection(state, policy)
+        changed = jnp.any(rejection.flat_inlier_mask != state.mask)
+        next_result = jax.lax.cond(
+            changed,
+            lambda: solve_lsq(
+                state.result.params,
+                rejection.flat_inlier_mask,
+                linearize,
+                options,
+            ),
+            lambda: state.result,
+        )
+        return advance_robust(state, rejection, next_result)
 
-def solve_robust_python(params, policy, residual, linearize, base_scale, options):
-    """Run robust fitting with Python control flow."""
-    return _solve_robust(
-        params, policy, residual, linearize, base_scale, options, compiled=False,
+    final = jax.lax.while_loop(
+        lambda state: continue_robust(state, policy),
+        step,
+        initial,
     )
+    return finish_robust(final, policy, params.dtype)

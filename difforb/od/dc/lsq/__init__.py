@@ -2,6 +2,7 @@
 
 from difforb.od.dc.lsq.lsq import (
     LSQTermination,
+    LMOptions,
     LeastSquares,
     LeastSquaresResult,
     PriorCovarianceResult,
@@ -10,6 +11,6 @@ from difforb.od.dc.lsq.lsq import (
 )
 
 __all__ = [
-    "LSQTermination", "LeastSquares", "LeastSquaresResult",
+    "LMOptions", "LSQTermination", "LeastSquares", "LeastSquaresResult",
     "PriorCovarianceResult", "RobustLeastSquares", "RobustResult",
 ]

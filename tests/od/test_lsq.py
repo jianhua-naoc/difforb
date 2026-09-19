@@ -7,11 +7,13 @@ import numpy as np
 
 from difforb.astrometry.weight import WeightResult
 
-from difforb.od.dc.lsq import LeastSquares, RobustLeastSquares
+from difforb.od.dc.lsq import LMOptions, LeastSquares, RobustLeastSquares
 from difforb.od.dc.lsq.core import (
     compute_normalized_residual_rms,
     compute_prior_covariance,
     compute_unweighted_rms,
+    evaluate_lm_trial,
+    initialize_lsq,
 )
 from difforb.od.outlier.chi2 import Chi2OutlierRejecter
 from difforb.od.outlier.policy import CompiledOutlierPolicy
@@ -49,7 +51,6 @@ def test_least_squares_solves_linear_model_against_closed_form():
     result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
-        residuals,
         linearize,
     )
 
@@ -89,7 +90,6 @@ def test_least_squares_refreshes_dynamic_weights_at_final_parameters():
     result = LeastSquares(max_iter=20).solve(
         init_params,
         inlier_mask,
-        residuals,
         linearize,
     )
 
@@ -134,7 +134,6 @@ def test_least_squares_uses_optical_correlation_blocks():
     result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
-        residuals,
         linearize,
     )
 
@@ -176,7 +175,6 @@ def test_least_squares_ignores_masked_outlier_rows():
     result = LeastSquares(max_iter=50).solve(
         init_params,
         inlier_mask,
-        residuals,
         linearize,
     )
 
@@ -233,7 +231,7 @@ def test_robust_lsq_events_ignore_structural_padding():
 
     policy = CompiledOutlierPolicy(
         auto_rejecter=None,
-        enable_auto_rejection=False,
+        enable_auto_rejection=True,
         max_iters=1,
         n_2d=0,
         n_1d=4,
@@ -246,18 +244,17 @@ def test_robust_lsq_events_ignore_structural_padding():
     RobustLeastSquares(LeastSquares(max_iter=50)).solve(
         init_params,
         policy,
-        residuals,
         linearize,
-        event_handler=events.append,
-        log_detail="iter",
+        verbose=lambda event, **data: events.append((event, data)),
     )
 
-    outlier_events = {event.event: event for event in events if event.event in {"outlier_iteration_start", "outlier_disabled"}}
-
-    assert outlier_events["outlier_iteration_start"].data["observation_count"] == 3
-    assert outlier_events["outlier_iteration_start"].data["inlier_count"] == 3
-    assert outlier_events["outlier_iteration_start"].data["outlier_count"] == 0
-    assert outlier_events["outlier_disabled"].data["observation_count"] == 3
+    assert [event for event, _ in events if event == "outlier_iteration"] == [
+        "outlier_iteration",
+    ]
+    outlier_data = next(data for event, data in events if event == "outlier_iteration")
+    assert outlier_data["observation_count"] == 3
+    assert outlier_data["inlier_count"] == 3
+    assert outlier_data["outlier_count"] == 0
 
 
 def test_robust_lsq_refits_final_mask_when_max_outlier_iterations_reached():
@@ -289,7 +286,6 @@ def test_robust_lsq_refits_final_mask_when_max_outlier_iterations_reached():
     result = RobustLeastSquares(LeastSquares(max_iter=50)).solve(
         init_params,
         policy,
-        residuals,
         linearize,
     )
 
@@ -332,22 +328,29 @@ def test_least_squares_keeps_linearization_weights_during_trials():
     def residuals(params):
         return jnp.asarray([params[0] ** 2 - 1.0])
 
-    events = []
     solver = LeastSquares(max_iter=50)
+    x0 = jnp.asarray([0.1])
+    mask = jnp.asarray([True])
+    state = initialize_lsq(
+        x0,
+        mask,
+        linearize,
+        LMOptions(50, solver.max_damping_iter, solver.damping_init),
+    )
+    trial, candidate_model = evaluate_lm_trial(state, mask, linearize)
+    assert not trial.accepted
+    assert_allclose(candidate_model.residuals, residuals(trial.candidate), atol=0.0, rtol=0.0)
+
     result = solver.solve(
-        jnp.asarray([0.1]), jnp.asarray([True]), residuals, linearize,
-        event_handler=events.append, log_detail="trial",
+        x0, mask, linearize,
     )
     assert result.converged
-    rejected = [event for event in events if event.event == "lm_trial_rejected"]
-    assert rejected
     # The first scalar LM correction is known analytically. Its rejected RMS
     # must use W(0.1), even though the candidate has a very different weight.
-    x0 = 0.1
-    candidate = x0 + (1.0 - x0**2) / (2.0*x0*(1.0 + solver.damping_init))
-    expected_rms = abs(candidate**2 - 1.0) * np.sqrt(2.0 + x0**2)
-    assert_allclose(rejected[0].data["normalized_residual_rms"], expected_rms, rtol=1e-12, atol=0.)
-    assert len([event for event in events if event.event == "lsq_step_accepted"]) == result.iter_num
+    initial = 0.1
+    candidate = initial + (1.0 - initial**2) / (2.0*initial*(1.0 + solver.damping_init))
+    expected_rms = abs(candidate**2 - 1.0) * np.sqrt(2.0 + initial**2)
+    assert_allclose(trial.rms, expected_rms, rtol=1e-12, atol=0.)
     # For this scalar root, the normal-matrix correction norm equals the whitened residual.
     assert result.params[0] > 0.
     assert result.normalized_residual_rms < 1e-3

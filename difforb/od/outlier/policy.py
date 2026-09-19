@@ -31,7 +31,7 @@ class CompiledOutlierPolicy(eqx.Module):
             flat_manual_inlier_mask: Bool[ArrayLike, "N_flat_obs"],
             flat_valid_mask: Bool[ArrayLike, "N_flat_obs"],
             observation_valid_mask: Bool[ArrayLike, "N_obs"],
-    ):
+    ) -> None:
         self.auto_rejecter = auto_rejecter
         self.enable_auto_rejection = coerce_scalar_bool("enable_auto_rejection", enable_auto_rejection)
         self.max_iters = coerce_scalar_int("max_iters", max_iters)
@@ -70,7 +70,7 @@ class CompiledOutlierPolicy(eqx.Module):
 
 class InteractiveOutlierPolicy:
     def __init__(self, auto_rejecter: OutlierRejecter | None, enable_auto_rejecter: bool = True,
-                 max_iters: int = 10):
+                 max_iters: int = 10) -> None:
         self.auto_rejecter = auto_rejecter
         self.enable_auto_rejecter = enable_auto_rejecter
         self.max_iters = max_iters
@@ -86,17 +86,26 @@ class InteractiveOutlierPolicy:
 
         return [int(i.item()) if hasattr(i, 'item') else int(i) for i in input_indices]
 
-    def force_outlier(self, input_indices: int | Iterable[int] | Float[ArrayLike, "..."]):
+    def force_outlier(
+            self,
+            input_indices: int | Iterable[int] | Float[ArrayLike, "..."],
+    ) -> None:
         for idx in self._normalize_indices(input_indices):
             self._manual_outlier_index.add(idx)
             self._manual_inlier_index.discard(idx)
 
-    def force_inlier(self, input_indices: int | Iterable[int] | Float[ArrayLike, "..."]):
+    def force_inlier(
+            self,
+            input_indices: int | Iterable[int] | Float[ArrayLike, "..."],
+    ) -> None:
         for idx in self._normalize_indices(input_indices):
             self._manual_inlier_index.add(idx)
             self._manual_outlier_index.discard(idx)
 
-    def restore_manual(self, input_indices: int | Iterable[int] | Float[ArrayLike, "..."] = None):
+    def restore_manual(
+            self,
+            input_indices: int | Iterable[int] | Float[ArrayLike, "..."] | None = None,
+    ) -> None:
         if input_indices is not None:
             for idx in self._normalize_indices(input_indices):
                 self._manual_outlier_index.discard(idx)
