@@ -367,7 +367,6 @@ class IAS15Interpolation(AbstractLocalInterpolation):
     t1: Float[Array, ""]
     dt: Float[Array, ""]
     y0: Tuple[Float[Array, "3"], Float[Array, "3"]]
-    y1: Tuple[Float[Array, "3"], Float[Array, "3"]]
     acc0: Float[Array, "3"]
     b: Float[Array, "7 3"]
 
@@ -519,17 +518,16 @@ class IAS15Solver(AbstractSolver):
             prev_dt=dt
         )
 
-        dense_info = dict(dt=dt, y0=y0, y1=y1, b=b, acc0=acc0)
+        dense_info = dict(dt=dt, y0=y0, b=b, acc0=acc0)
 
         return y1, error_info, dense_info, new_solver_state, RESULTS.successful
 
-    def interpolation_cls(self, *, t0, t1, dt, y0, y1, b, acc0):
+    def interpolation_cls(self, *, t0, t1, dt, y0, b, acc0):
         return IAS15Interpolation(
             dt=dt,
             t0=t0,
             t1=t1,
             y0=y0,
-            y1=y1,
             acc0=acc0,
             b=b
         )

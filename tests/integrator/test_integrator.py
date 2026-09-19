@@ -148,6 +148,38 @@ def test_integrator_constant_acceleration_closed_form():
     assert_allclose(actual_vel, expected_vel, atol=1.0e-13, rtol=0.0)
 
 
+def test_integrator_bidirectional_forward_derivative():
+    force_model = ForceModel([ConstantAccelerationForce([2.0e-6, -3.0e-6, 4.0e-6])])
+    integrator = NumericalIntegrator(method="IAS15", tol=1.0e-12, initial_step=0.05, max_steps=128)
+    y0 = jnp.asarray([1.0, -2.0, 0.5, 0.01, 0.02, -0.03], dtype=float)
+    t0_jd1 = jnp.asarray(2460741.0, dtype=float)
+    t0_jd2 = jnp.asarray(0.5, dtype=float)
+    offsets = jnp.asarray([-1.25, 2.75], dtype=float)
+
+    def evaluate(state):
+        trajectory = integrator(
+            force_model,
+            state,
+            t0_jd1,
+            t0_jd2,
+            t0_jd1,
+            t0_jd2 - 1.5,
+            t0_jd1,
+            t0_jd2 + 3.0,
+        )
+        pos, vel = trajectory.evaluate(t0_jd1, t0_jd2 + offsets)
+        return jnp.concatenate([pos, vel], axis=-1)
+
+    jacobian = jax.jacfwd(evaluate)(y0)
+    identity = jnp.eye(3, dtype=float)
+    expected = jnp.zeros((offsets.size, 6, 6), dtype=float)
+    expected = expected.at[:, :3, :3].set(identity)
+    expected = expected.at[:, :3, 3:].set(offsets[:, None, None] * identity)
+    expected = expected.at[:, 3:, 3:].set(identity)
+
+    assert_allclose(jacobian, expected, atol=2.0e-13, rtol=0.0)
+
+
 def test_bidirectional_interpolator_coverage_and_reversed_span():
     acceleration = jnp.asarray([1.0e-6, 0.0, -2.0e-6], dtype=float)
     force_model = ForceModel([ConstantAccelerationForce(acceleration)])

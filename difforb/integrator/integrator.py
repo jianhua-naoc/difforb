@@ -448,16 +448,26 @@ class NumericalIntegrator(eqx.Module):
         y0 = (y0[:3], y0[3:6])
         adjoint = diffrax.ForwardMode()
         saveat = diffrax.SaveAt(dense=True)
-        sol_fwd = diffrax.diffeqsolve(
-            term, self.solver, 0., tau_fwd, dt0=self.initial_step, y0=y0, args=args,
-            stepsize_controller=self.step_controller, max_steps=self.max_steps,
-            saveat=saveat, adjoint=adjoint
+
+        def solve_direction(
+                inputs: tuple[Float[Array, ""], Float[Array, ""]],
+        ) -> diffrax.Solution:
+            end, initial_step = inputs
+            return diffrax.diffeqsolve(
+                term, self.solver, 0., end, dt0=initial_step, y0=y0, args=args,
+                stepsize_controller=self.step_controller, max_steps=self.max_steps,
+                saveat=saveat, adjoint=adjoint,
+            )
+
+        solutions = jax.lax.map(
+            solve_direction,
+            (
+                jnp.stack((tau_fwd, tau_bwd)),
+                jnp.asarray((self.initial_step, -self.initial_step)),
+            ),
         )
-        sol_bwd = diffrax.diffeqsolve(
-            term, self.solver, 0., tau_bwd, dt0=-self.initial_step, y0=y0, args=args,
-            stepsize_controller=self.step_controller, max_steps=self.max_steps,
-            saveat=saveat, adjoint=adjoint
-        )
+        sol_fwd = jax.tree.map(lambda value: value[0] if eqx.is_array(value) else value, solutions)
+        sol_bwd = jax.tree.map(lambda value: value[1] if eqx.is_array(value) else value, solutions)
 
         return sol_fwd, sol_bwd
 
