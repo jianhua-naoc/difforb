@@ -443,7 +443,8 @@ def down_leg_light_time_single(t_rec: Time, rx: Site, target: SmallBody,
     # -------------------------------------------------------------------------
     # Step 1: Build the fixed receive-end geometry
     # -------------------------------------------------------------------------
-    rx_state_rec = rx.state(t_rec, frame=BCRS, earth=earth)
+    earth2rx_state_rec = rx.state(t_rec, frame=GCRS)
+    rx_state_rec = earth2rx_state_rec.to(BCRS, earth=earth)
     rx_pos_rec = rx_state_rec.pos
     rx_vel_rec = rx_state_rec.vel
     t_rec_tdb = rx_state_rec.tdb
@@ -451,7 +452,6 @@ def down_leg_light_time_single(t_rec: Time, rx: Site, target: SmallBody,
     t_rec_tdb_jd2 = t_rec_tdb.jd2
 
     if context.atmos_cor_enable:
-        earth2rx_state_rec = rx.state(t_rec, frame=GCRS)
         earth2rx_pos_rec = earth2rx_state_rec.pos
         dist_earth2rx_rec = jnp.linalg.norm(earth2rx_pos_rec, axis=-1)
     if context.corona_cor_enable:
@@ -622,7 +622,8 @@ def forward_up_leg_light_time_single(t_trm: Time, tx: Site, target: SmallBody,
     # -------------------------------------------------------------------------
     # Step 1: Build the fixed transmit-end geometry
     # -------------------------------------------------------------------------
-    tx_state_trm = tx.state(t_trm, frame=BCRS, earth=earth)
+    earth2tx_state_trm = tx.state(t_trm, frame=GCRS)
+    tx_state_trm = earth2tx_state_trm.to(BCRS, earth=earth)
     tx_pos_trm = tx_state_trm.pos
     tx_vel_trm = tx_state_trm.vel
     t_trm_tdb = tx_state_trm.tdb
@@ -633,7 +634,6 @@ def forward_up_leg_light_time_single(t_trm: Time, tx: Site, target: SmallBody,
     eop = t_trm.eop
     gregorian_start = t_trm.gregorian_start
     if context.atmos_cor_enable:
-        earth2tx_state_trm = tx.state(t_trm, frame=GCRS)
         earth2tx_pos_trm = earth2tx_state_trm.pos
         dist_earth2tx_trm = jnp.linalg.norm(earth2tx_pos_trm, axis=-1)
     if context.corona_cor_enable:
@@ -768,7 +768,8 @@ def forward_down_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounc
     def body_func(carry):
         i, cur_t_rec_tt_jd2, prev_t_rec_tt_jd2, *_ = carry
         t_rec = Time.from_tt_jd(t_bounce_tt_jd1, cur_t_rec_tt_jd2, eop=eop, gregorian_start=gregorian_start)
-        rx_state_rec = rx.state(t_rec, frame=BCRS, earth=earth)
+        earth2rx_state_rec = rx.state(t_rec, frame=GCRS)
+        rx_state_rec = earth2rx_state_rec.to(BCRS, earth=earth)
         rx_pos_rec = rx_state_rec.pos
         rx_vel_rec = rx_state_rec.vel
         t_rec_tdb = rx_state_rec.tdb
@@ -788,7 +789,7 @@ def forward_down_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounc
         lt_tdb = lt_tdb + rel_delay
 
         if context.atmos_cor_enable:
-            earth2rx_pos_rec = rx.state(t_rec, frame=GCRS).pos
+            earth2rx_pos_rec = earth2rx_state_rec.pos
             dist_earth2rx_rec = jnp.linalg.norm(earth2rx_pos_rec, axis=-1)
             cosz = jnp.sum(earth2rx_pos_rec * down_pos, axis=-1) / (
                     dist_earth2rx_rec * down_dist)
@@ -895,7 +896,8 @@ def up_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, 
     def body_func(carry):
         i, cur_t_trm_tt_jd2, prev_t_trm_tt_jd2, *_ = carry
         t_trm = Time.from_tt_jd(t_bounce_tt_jd1, cur_t_trm_tt_jd2, eop=eop, gregorian_start=gregorian_start)
-        tx_state_trm = tx.state(t_trm, frame=BCRS, earth=earth)
+        earth2tx_state_trm = tx.state(t_trm, frame=GCRS)
+        tx_state_trm = earth2tx_state_trm.to(BCRS, earth=earth)
         tx_pos_trm, tx_vel_trm = tx_state_trm.pos, tx_state_trm.vel
         t_trm_tdb = tx_state_trm.tdb
         t_trm_tdb_jd1, t_trm_tdb_jd2 = t_trm_tdb.jd1, t_trm_tdb.jd2
@@ -914,7 +916,7 @@ def up_leg_light_time_single(t_bounce_tdb: TDBView, target_state_bounce: State, 
         lt_tdb = lt_tdb + rel_delay
 
         if context.atmos_cor_enable:
-            earth2tx_pos_trm = tx.state(t_trm, frame=GCRS).pos
+            earth2tx_pos_trm = earth2tx_state_trm.pos
             dist_earth2tx_trm = jnp.linalg.norm(earth2tx_pos_trm, axis=-1)
             cosz = jnp.sum(earth2tx_pos_trm * up_pos, axis=-1) / (
                     dist_earth2tx_trm * up_dist)

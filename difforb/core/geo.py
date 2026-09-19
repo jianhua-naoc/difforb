@@ -354,14 +354,12 @@ class ITRS(BatchableObject):
         """
         # Estimate the time derivative of C_T with a central difference.
         t_delta = 1e-2 / DAY_S
-        t_before = t - t_delta
-        C_T_before = t_before.cirs_to_gcrs_matrix
-        t_after = t + t_delta
-        C_T_after = t_after.cirs_to_gcrs_matrix
+        C_T_before, C_T, C_T_after = jax.vmap(
+            lambda offset: (t + offset).cirs_to_gcrs_matrix,
+        )(jnp.asarray((-t_delta, 0.0, t_delta)))
         C_T_deriv = (C_T_after - C_T_before) / (2. * t_delta)
         W_T = t.inversed_polar_motion_matrix
         ERA = t.ERA
-        C_T = t.cirs_to_gcrs_matrix
 
         # C_T, C_T_deriv = compute_C_T_and_C_T_deriv(t.jd)
 
