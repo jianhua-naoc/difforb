@@ -189,6 +189,35 @@ def test_compute_pva_single():
     assert_allclose(actual_acc, expected_acc, atol=1.0e-13, rtol=0.0)
 
 
+def test_compute_pva_single_matches_position_derivatives_at_chunk_boundary():
+    args = (
+        jnp.asarray([0.0], dtype=float),
+        jnp.asarray([1]),
+        jnp.asarray([DAY_SECONDS], dtype=float),
+        SEGMENT_COEFFICIENTS,
+        J2000_JD,
+    )
+    tdb_jd2 = jnp.asarray(0.0, dtype=float)
+
+    def position(offset):
+        return compute_position_single(*args, offset)
+
+    def position_and_velocity(offset):
+        return jax.jvp(position, (offset,), (jnp.asarray(1.0),))
+
+    expected_pos, expected_vel = position_and_velocity(tdb_jd2)
+    (_, _), (_, expected_acc) = jax.jvp(
+        position_and_velocity,
+        (tdb_jd2,),
+        (jnp.asarray(1.0),),
+    )
+    actual_pos, actual_vel, actual_acc = compute_pva_single(*args, tdb_jd2)
+
+    assert_array_equal(actual_pos, expected_pos)
+    assert_array_equal(actual_vel, expected_vel)
+    assert_array_equal(actual_acc, expected_acc)
+
+
 def test_compute_position_pv_pva_batch_shapes():
     tdb_jd1 = jnp.asarray([J2000_JD, J2000_JD], dtype=float)
     tdb_jd2 = jnp.asarray([0.25, 0.75], dtype=float)

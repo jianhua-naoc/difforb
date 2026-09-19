@@ -126,6 +126,61 @@ def compute_chebyshev_polynomial(tdb_scale: float, coefficients: Array) -> Array
     return coefficients[-1] + tdb_scale * bk1 - bk2
 
 
+def compute_chebyshev_polynomial_with_derivatives(
+        tdb_scale: float, coefficients: Array,
+) -> tuple[Array, Array, Array]:
+    """Compute a Chebyshev polynomial and its first two scale derivatives."""
+    component_num = coefficients.shape[1]
+    zeros = jnp.zeros(component_num)
+    double_tdb_scale = 2. * tdb_scale
+
+    def body_func(carry, coeff_k):
+        bk1, bk2, dbk1, dbk2, d2bk1, d2bk2 = carry
+        bk = coeff_k + double_tdb_scale * bk1 - bk2
+        dbk = 2. * bk1 + double_tdb_scale * dbk1 - dbk2
+        d2bk = 2. * dbk1 + (2. * dbk1 + double_tdb_scale * d2bk1) - d2bk2
+        return (bk, bk1, dbk, dbk1, d2bk, d2bk1), None
+
+    initial = (zeros, zeros, zeros, zeros, zeros, zeros)
+    (bk1, bk2, dbk1, dbk2, d2bk1, d2bk2), _ = jax.lax.scan(
+        body_func, initial, coefficients[:-1],
+    )
+    value = coefficients[-1] + tdb_scale * bk1 - bk2
+    first = bk1 + tdb_scale * dbk1 - dbk2
+    second = dbk1 + (dbk1 + tdb_scale * d2bk1) - d2bk2
+    return value, first, second
+
+
+def select_spk_polynomial(
+        seg_starts_sec: Array, chunk_nums: Array, chunk_lengths_sec: Array,
+        coefficients: Array, tdb_jd1: float, tdb_jd2: float,
+) -> tuple[Array, Array, Array]:
+    """Select one SPK coefficient block and its offset within the chunk."""
+    coefficients = jax.lax.stop_gradient(coefficients)
+    seg_starts_sec = jax.lax.stop_gradient(seg_starts_sec)
+    chunk_nums = jax.lax.stop_gradient(chunk_nums)
+    tdb_sec = (tdb_jd1 - J2000) * DAY_S + tdb_jd2 * DAY_S
+    seg_idx = jnp.searchsorted(seg_starts_sec, tdb_sec, side='right') - 1
+    seg_idx = jnp.clip(seg_idx, 0, seg_starts_sec.shape[0] - 1)
+    segment_coefficients = coefficients[seg_idx]
+    seg_start_sec = seg_starts_sec[seg_idx]
+    chunk_length_sec = chunk_lengths_sec[seg_idx]
+    dt_seg1 = (tdb_jd1 - J2000) * DAY_S - seg_start_sec
+    dt_seg2 = tdb_jd2 * DAY_S
+    dt_seg = dt_seg1 + dt_seg2
+    chunk_idx = jnp.floor(dt_seg / chunk_length_sec).astype(int)
+    chunk_idx = jnp.clip(chunk_idx, 0, chunk_nums[seg_idx] - 1)
+    coefficient = segment_coefficients[:, :, chunk_idx]
+    dt_chunk = dt_seg - chunk_idx * chunk_length_sec
+    return coefficient, dt_chunk, chunk_length_sec
+
+
+def normalize_spk_time(dt_chunk: Array, chunk_length_sec: Array) -> Array:
+    """Map an SPK chunk offset to its clipped Chebyshev coordinate."""
+    tdb_scale = (2. * dt_chunk / chunk_length_sec) - 1.
+    return jnp.clip(tdb_scale, -1.0, 1.0)
+
+
 def compute_position_single(seg_starts_sec: Array, chunk_nums: Array, chunk_lengths_sec: Array, coefficients: Array, tdb_jd1: float,
                             tdb_jd2: float) -> Array:
     """Evaluate a merged SPK segment at one ``TDB`` epoch.
@@ -148,31 +203,11 @@ def compute_position_single(seg_starts_sec: Array, chunk_nums: Array, chunk_leng
     Array
         Position vector in kilometers.
     """
-    coefficients = jax.lax.stop_gradient(coefficients)
-    seg_starts_sec = jax.lax.stop_gradient(seg_starts_sec)
-    chunk_nums = jax.lax.stop_gradient(chunk_nums)
-    tdb_sec = (tdb_jd1 - J2000) * DAY_S + tdb_jd2 * DAY_S
-    # 1. Find the segment covered the input time
-    seg_idx = jnp.searchsorted(seg_starts_sec, tdb_sec, side='right') - 1
-    seg_idx = jnp.clip(seg_idx, 0, seg_starts_sec.shape[0] - 1)
-    # 2. Extract parameters of the segment
-    coefficients = coefficients[seg_idx]
-    seg_start_sec = seg_starts_sec[seg_idx]
-    chunk_length_sec = chunk_lengths_sec[seg_idx]
-    # 3. Compute high-precision relative time
-    dt_seg1 = (tdb_jd1 - J2000) * DAY_S - seg_start_sec
-    dt_seg2 = tdb_jd2 * DAY_S
-    dt_seg = dt_seg1 + dt_seg2
-    # 4. Find the chunk in the segment covered the input time
-    chunk_idx = jnp.floor(dt_seg / chunk_length_sec).astype(int)
-    chunk_idx = jnp.clip(chunk_idx, 0, chunk_nums[seg_idx] - 1)
-    coefficient = coefficients[:, :, chunk_idx]
-    # 5. Compute normalized time
-    t_chunk_start_sec = chunk_idx * chunk_length_sec
-    dt_chunk = dt_seg - t_chunk_start_sec
-    # 5. Compute position by evaluate Chebyshev polynomial
-    tdb_scale = (2. * dt_chunk / chunk_length_sec) - 1.
-    tdb_scale = jnp.clip(tdb_scale, -1.0, 1.0)
+    coefficient, dt_chunk, chunk_length_sec = select_spk_polynomial(
+        seg_starts_sec, chunk_nums, chunk_lengths_sec, coefficients,
+        tdb_jd1, tdb_jd2,
+    )
+    tdb_scale = normalize_spk_time(dt_chunk, chunk_length_sec)
     return compute_chebyshev_polynomial(tdb_scale, coefficient)
 
 
@@ -200,8 +235,21 @@ def compute_pv_single(seg_starts_sec: Array, chunk_nums: Array, chunk_lengths_se
     tuple[Array, Array]
         Position in kilometers and velocity in kilometers per day.
     """
-    pos_fn = partial(compute_position_single, seg_starts_sec, chunk_nums, chunk_lengths_sec, coefficients, tdb_jd1)
-    pos, vel = jax.jvp(pos_fn, (tdb_jd2,), (1.,))
+    coefficient, dt_chunk, chunk_length_sec = select_spk_polynomial(
+        seg_starts_sec, chunk_nums, chunk_lengths_sec, coefficients,
+        tdb_jd1, tdb_jd2,
+    )
+    day_seconds = jnp.asarray(DAY_S, dtype=dt_chunk.dtype)
+    zero = jnp.zeros_like(chunk_length_sec)
+    tdb_scale, scale_rate = jax.jvp(
+        normalize_spk_time,
+        (dt_chunk, chunk_length_sec),
+        (day_seconds, zero),
+    )
+    pos, dpos, _ = compute_chebyshev_polynomial_with_derivatives(
+        tdb_scale, coefficient,
+    )
+    vel = dpos * scale_rate
     return pos, vel
 
 
@@ -229,13 +277,28 @@ def compute_pva_single(seg_starts_sec: Array, chunk_nums: Array, chunk_lengths_s
     tuple[Array, Array, Array]
         Position in kilometers, velocity in kilometers per day, and acceleration in kilometers per day squared.
     """
-    pos_fn = partial(compute_position_single, seg_starts_sec, chunk_nums, chunk_lengths_sec, coefficients, tdb_jd1)
+    coefficient, dt_chunk, chunk_length_sec = select_spk_polynomial(
+        seg_starts_sec, chunk_nums, chunk_lengths_sec, coefficients,
+        tdb_jd1, tdb_jd2,
+    )
+    day_seconds = jnp.asarray(DAY_S, dtype=dt_chunk.dtype)
+    zero = jnp.zeros_like(chunk_length_sec)
 
-    def pos_vel_fn(t):
-        return jax.jvp(pos_fn, (t,), (1.0,))
+    def normalized_time_with_rate(offset):
+        return jax.jvp(
+            normalize_spk_time,
+            (offset, chunk_length_sec),
+            (day_seconds, zero),
+        )
 
-    (pos, vel), (_, acc) = jax.jvp(pos_vel_fn, (tdb_jd2,), (1.0,))
-
+    (tdb_scale, scale_rate), (_, scale_acceleration) = jax.jvp(
+        normalized_time_with_rate, (dt_chunk,), (day_seconds,),
+    )
+    pos, dpos, d2pos = compute_chebyshev_polynomial_with_derivatives(
+        tdb_scale, coefficient,
+    )
+    vel = dpos * scale_rate
+    acc = d2pos * scale_rate * scale_rate + dpos * scale_acceleration
     return pos, vel, acc
 
 
