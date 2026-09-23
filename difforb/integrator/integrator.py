@@ -203,7 +203,7 @@ class NumericalIntegrator(eqx.Module):
     def __init__(self,
                  method: Literal["IAS15", "DOPRI8", "DOPRI5"] = 'IAS15',
                  tol: Optional[float] = 1e-9,
-                 max_steps: int = 4096,
+                 max_steps: int = 2048,
                  *,
                  rtol: Optional[float] = None,
                  atol: Optional[float] = None,
@@ -232,7 +232,7 @@ class NumericalIntegrator(eqx.Module):
             - if ``tol`` and ``atol`` are given, then ``rtol = tol``.
 
             For ``"IAS15"``, only the absolute tolerance is meaningful, so ``tol`` is interpreted as the fallback value for ``atol``.
-        max_steps : int, default=4096
+        max_steps : int, default=2048
             Maximum number of adaptive steps allowed in each forward or backward solve.
         rtol : float or None, optional
             Relative tolerance for ``"DOPRI8"`` and ``"DOPRI5"``.
