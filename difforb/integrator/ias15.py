@@ -1,13 +1,20 @@
+"""IAS15 integration with compensated updates and adaptive Gauss–Radau steps.
+
+Built-in gravity backgrounds are evaluated once per trial step at the seven corrector nodes. Each corrector iteration still evaluates acceleration at the current predicted state.
+"""
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from diffrax import AbstractTerm, AbstractSolver, RESULTS, AbstractStepSizeController, AbstractLocalInterpolation
 from diffrax._custom_types import DenseInfo
+from diffrax._term import WrapTerm
 from jax import Array
 from typing import NamedTuple, Any, Callable, Tuple
 
 from jaxtyping import Float, Bool, ArrayLike
 from difforb.core.validate import coerce_scalar_int
+from difforb.dynamics.force_model.model import ForceModel
 
 jax.config.update("jax_enable_x64", True)
 
@@ -110,12 +117,44 @@ def add_cs(sum: jnp.ndarray, compensation: jnp.ndarray, num: jnp.ndarray) -> tup
 class IAS15Term(AbstractTerm):
     """Term for IAS15 2-order ODE solver"""
     acc_fn: Callable[[Float[ArrayLike, ""], Tuple[Float[Array, "3"], Float[Array, "3"]], Any], Float[Array, "3"]]
+    _background: Any = eqx.field(default_factory=lambda: None, init=False, repr=False)
 
     def vf(self, t: Float[ArrayLike, ""], state: Tuple[Float[Array, "3"], Float[Array, "3"]], args: Any) -> Tuple[Float[
         Array, "3"], Float[Array, "3"]]:
         _, vel = state
-        acc = self.acc_fn(t, state, args)
+        if self._background is None:
+            acc = self.acc_fn(t, state, args)
+        else:
+            acc = self.acc_fn._evaluate_prepared(state, args, self._background)
         return vel, acc
+
+    @staticmethod
+    def _prepare_nodes(term, times, args):
+        """Bind trial-step backgrounds to a term, retaining Diffrax's time mapping.
+
+        The returned term stores backgrounds along the node axis. Select a scalar node with ``_at_node`` before calling ``vf``. The original term remains unchanged for endpoint evaluations and subsequent trial steps.
+        """
+        if type(term) is WrapTerm:
+            return WrapTerm(
+                IAS15Term._prepare_nodes(term.term, times * term.direction, args),
+                term.direction,
+            )
+        if type(term) is IAS15Term and type(term.acc_fn) is ForceModel:
+            background = jax.vmap(lambda t: term.acc_fn._prepare(t, args))(times)
+            return eqx.tree_at(
+                lambda t: t._background, term, background, is_leaf=lambda x: x is None,
+            )
+        return term
+
+    @staticmethod
+    def _at_node(term, index):
+        """Select one node's background while retaining the ordinary ``vf`` interface."""
+        if type(term) is WrapTerm:
+            return WrapTerm(IAS15Term._at_node(term.term, index), term.direction)
+        if type(term) is IAS15Term and term._background is not None:
+            background = jax.tree.map(lambda x: x[index], term._background)
+            return eqx.tree_at(lambda t: t._background, term, background)
+        return term
 
     def contr(self, t0: Float[ArrayLike, ""], t1: Float[ArrayLike, ""], **kwargs) -> Float[ArrayLike, ""]:
         return t1 - t0
@@ -215,7 +254,12 @@ def ias15_predictor_corrector_step(term: 'IAS15Term', t0: Float[Array, ""], dt: 
                                    g: Float[Array, "7 3"], compensation_pos: Float[Array, "3"],
                                    compensation_vel: Float[Array, "3"], args: Any) -> Tuple[
     Float[Array, "7 3"], Float[Array, "7 3"], Float[Array, "7 3"], Float[Array, ""]]:
-    """One step of predictor-corrector loop"""
+    """Run one predictor-corrector sweep over the seven Gauss–Radau nodes.
+
+    Notes
+    -----
+    The term owns any prepared node backgrounds. Acceleration is recomputed from the current predicted position and velocity through ``vf`` on every sweep.
+    """
 
     def body_func(carry, input):
         cur_b, cur_compensation_b, cur_g = carry
@@ -227,7 +271,8 @@ def ias15_predictor_corrector_step(term: 'IAS15Term', t0: Float[Array, ""], dt: 
 
         # 2. Evaluate acceleration
         t = t0 + h * dt
-        _, acc = term.vf(direction * t, (pos, vel), args)
+        node_term = IAS15Term._at_node(term, n)
+        _, acc = node_term.vf(direction * t, (pos, vel), args)
 
         # 3. Correct g
         g_new_n = compute_nth_substep_g(acc, acc0, cur_g, r_inv_row)
@@ -267,7 +312,15 @@ def ias15_predictor_corrector_loop(term: 'IAS15Term', t0: Float[Array, ""], dt: 
                                    init_pred_corr_state: 'IAS15PredCorrState', compensation_pos: Float[Array, "3"],
                                    compensation_vel: Float[Array, "3"],
                                    args: Any) -> 'IAS15PredCorrState':
+    """Solve one trial step while reusing its fixed node backgrounds.
+
+    Notes
+    -----
+    Background preparation is local to this call. Rejected steps rebuild it at the new nodes, and differentiation through the prepared data is retained.
+    """
     pos0, vel0 = state0
+    offsets = direction * (t0 + H[1:] * dt)
+    term = IAS15Term._prepare_nodes(term, offsets, args)
 
     def cond_func(state: 'IAS15PredCorrState'):
         return (

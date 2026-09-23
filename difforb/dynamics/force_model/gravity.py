@@ -82,14 +82,18 @@ class NewtonianGravity(Force):
         Float[Array, "3"]
             Acceleration in ``au / day^2``.
         """
-        pos, _ = state
+        return self._evaluate_prepared(state, self._prepare(tdb_jd1, tdb_jd2))
+
+    def _prepare(self, tdb_jd1, tdb_jd2):
+        """Return perturbing-body positions in ``BCRS`` at one ``TDB`` epoch, in ``au``."""
         if isinstance(self.bodies, EphemerisBodyBatch):
-            pos_others = self.bodies.evaluate(tdb_jd1, tdb_jd2)
-        else:
-            pos_others = jnp.stack([
-                body._bcrs_pos_jd(tdb_jd1, tdb_jd2) for body in self.bodies
-            ])
-        return compute_newtonian_acceleration(pos, pos_others, self.gms)
+            return self.bodies.evaluate(tdb_jd1, tdb_jd2)
+        return jnp.stack([
+            body._bcrs_pos_jd(tdb_jd1, tdb_jd2) for body in self.bodies
+        ])
+
+    def _evaluate_prepared(self, state, pos_others):
+        return compute_newtonian_acceleration(state[0], pos_others, self.gms)
 
     @property
     def shape(self):
@@ -255,7 +259,10 @@ class PPNGravity(Force):
         Float[Array, "3"]
             Acceleration in ``au / day^2``.
         """
-        pos, vel = state
+        return self._evaluate_prepared(state, self._prepare(tdb_jd1, tdb_jd2))
+
+    def _prepare(self, tdb_jd1, tdb_jd2):
+        """Return background ``BCRS`` states and potentials at one ``TDB`` epoch, independently of the integrated body."""
         if isinstance(self.bodies, EphemerisBodyBatch):
             pos_others, vel_others, acc_others = self.bodies.evaluate(
                 tdb_jd1, tdb_jd2, derivatives=True,
@@ -267,9 +274,12 @@ class PPNGravity(Force):
             pos_others = jnp.stack([values[0] for values in pva])
             vel_others = jnp.stack([values[1] for values in pva])
             acc_others = jnp.stack([values[2] for values in pva])
-        mu_others = self.gms
-        phi_planetary = compute_planetary_potentials(pos_others, mu_others)
-        return compute_ppn_acceleration(pos, vel, pos_others, vel_others, acc_others, mu_others, phi_planetary)
+        phi_planetary = compute_planetary_potentials(pos_others, self.gms)
+        return pos_others, vel_others, acc_others, phi_planetary
+
+    def _evaluate_prepared(self, state, background):
+        pos_others, vel_others, acc_others, phi_planetary = background
+        return compute_ppn_acceleration(*state, pos_others, vel_others, acc_others, self.gms, phi_planetary)
 
     @property
     def shape(self):

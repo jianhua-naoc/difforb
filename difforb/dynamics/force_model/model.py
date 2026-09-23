@@ -14,6 +14,7 @@ from jaxtyping import Float
 from difforb.core.batch import BatchableObject
 from difforb.core.time.utils import renormalize_split_jd
 from difforb.dynamics.force_model.base import Force, ParametrizedForce
+from difforb.dynamics.force_model.gravity import NewtonianGravity, PPNGravity
 from difforb.report.text import build_repr, format_class_name_array, format_shape, format_string_array
 
 
@@ -63,6 +64,34 @@ class ForceModel(BatchableObject):
         acc = jnp.zeros(3)
         for force in self.forces:
             acc += force(tdb_jd1, tdb_jd2, state, args)
+        return acc
+
+    def _prepare(self, tdb_offset, args):
+        """Prepare built-in gravity backgrounds for repeated states at one epoch.
+
+        The offset is in days from the split ``TDB`` reference epoch in ``args``. The returned PyTree retains time and force-parameter derivatives and is valid only for this epoch and model. Return ``None`` when no force supports reuse.
+        """
+        if not any(type(force) in (NewtonianGravity, PPNGravity) for force in self.forces):
+            return None
+        t0_jd1, t0_jd2 = args
+        tdb_jd1, tdb_jd2 = renormalize_split_jd(t0_jd1, t0_jd2 + tdb_offset)
+        # Exact types preserve custom subclasses' acceleration implementations.
+        backgrounds = tuple(
+            force._prepare(tdb_jd1, tdb_jd2)
+            if type(force) in (NewtonianGravity, PPNGravity) else None
+            for force in self.forces
+        )
+        return tdb_jd1, tdb_jd2, backgrounds
+
+    def _evaluate_prepared(self, state, args, prepared):
+        """Recompute acceleration for the current ``BCRS`` state using prepared backgrounds."""
+        tdb_jd1, tdb_jd2, backgrounds = prepared
+        acc = jnp.zeros(3)
+        for force, background in zip(self.forces, backgrounds):
+            if background is None:
+                acc += force(tdb_jd1, tdb_jd2, state, args)
+            else:
+                acc += force._evaluate_prepared(state, background)
         return acc
 
     def get_all_estimated_params(self) -> Float[Array, "N_all_estimated"]:
