@@ -9,6 +9,7 @@ residual norm.
 
 from typing import NamedTuple
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import Array
@@ -51,6 +52,7 @@ class DoubleRIODResult(NamedTuple):
     iter_num: int
 
 
+@eqx.filter_jit
 def double_r_iod(site_pos: Float[Array, "N 3 3"],
                  obs_los: Float[Array, "N 3 3"],
                  obs_jd1: Float[Array, "N 3"],
