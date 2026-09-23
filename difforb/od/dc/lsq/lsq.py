@@ -18,7 +18,10 @@ from difforb.od.dc.lsq.core import (
     evaluate_rejection,
     finish_robust,
     flat_inlier_mask_to_observation_mask,
+    initialize_lsq,
+    initialize_refit,
     initialize_robust,
+    linearize_at,
     solve_lsq,
     solve_lsq_python,
     solve_robust,
@@ -63,11 +66,13 @@ class LeastSquares:
         """Fit one fixed inlier set and return a JAX-compatible result."""
         reporter = solver_progress_reporter(verbose)
         options = self.options
+        model = linearize_at(init_params, inlier_mask, linearize_func)
+        initial = initialize_lsq(init_params, model, options)
 
         if self.solver_jit and reporter is None:
-            return solve_lsq(init_params, inlier_mask, linearize_func, options)
+            return solve_lsq(initial, inlier_mask, linearize_func, options)
         return solve_lsq_python(
-            init_params, inlier_mask, linearize_func, options,
+            initial, inlier_mask, linearize_func, options,
             step_callback=reporter,
         )
 
@@ -105,11 +110,14 @@ class RobustLeastSquares:
             rejection = evaluate_rejection(state, compiled_outlier_policy)
             changed = bool(jnp.any(rejection.flat_inlier_mask != state.mask))
             if changed:
-                next_result = self.solver.solve(
-                    state.result.params,
+                options = self.solver.options
+                initial = initialize_refit(state.result, rejection.flat_inlier_mask, options)
+                next_result = solve_lsq_python(
+                    initial,
                     rejection.flat_inlier_mask,
                     linearize_func,
-                    verbose=False if reporter is None else reporter,
+                    options,
+                    step_callback=reporter,
                 )
             else:
                 next_result = state.result

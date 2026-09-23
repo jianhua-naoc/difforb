@@ -539,12 +539,10 @@ def update_lm_state(
 
 def initialize_lsq(
         params: Float[Array, "N_param"],
-        mask: Bool[Array, "N_flat_obs"],
-        linearize: LinearizationFunction,
+        model: Linearization,
         options: LMOptions,
 ) -> LMState:
-    """Initialize one fixed-mask fit."""
-    model = linearize_at(params, mask, linearize)
+    """Reset damping, counters, and termination for a prepared linearization."""
     code = jnp.where(model.finite, LSQTermination.running, LSQTermination.nonfinite_model)
     code = jnp.where(
         model.finite & (options.max_iter == 0),
@@ -556,6 +554,25 @@ def initialize_lsq(
         params, model, jnp.asarray(options.damping_init, params.dtype),
         zero, zero, zero, code,
     )
+
+
+@jax.jit
+def initialize_refit(
+        result: LeastSquaresResult,
+        mask: Bool[Array, "N_flat_obs"],
+        options: LMOptions,
+) -> LMState:
+    """Initialize a new mask at the previous fit's final parameters.
+
+    Notes
+    -----
+    Only the inlier mask may change. The residuals, Jacobian, and dynamic weights belong to the unchanged parameter vector and measurement model. Weighted quantities and all iteration controls are rebuilt for the new fit.
+    """
+    model = prepare_linearization(
+        result.params, result.jacobian, result.residuals,
+        result.optical_weight_matrices, result.radar_weights, mask,
+    )
+    return initialize_lsq(result.params, model, options)
 
 
 def advance_lsq(
@@ -614,13 +631,12 @@ def finish_lsq(
 
 @eqx.filter_jit
 def solve_lsq(
-        params: Float[Array, "N_param"],
+        initial: LMState,
         mask: Bool[Array, "N_flat_obs"],
         linearize: LinearizationFunction,
         options: LMOptions,
 ) -> LeastSquaresResult:
-    """Run the complete LM loop as one JAX computation."""
-    initial = initialize_lsq(params, mask, linearize, options)
+    """Run the compiled LM loop from an initialized state."""
     final = jax.lax.while_loop(
         lambda state: state.termination_code == LSQTermination.running,
         lambda state: advance_lsq(state, mask, linearize, options),
@@ -630,15 +646,14 @@ def solve_lsq(
 
 
 def solve_lsq_python(
-        params: Float[Array, "N_param"],
+        state: LMState,
         mask: Bool[Array, "N_flat_obs"],
         linearize: LinearizationFunction,
         options: LMOptions,
         *,
         step_callback: Callable[..., None] | None = None,
 ) -> LeastSquaresResult:
-    """Drive small JIT kernels with Python control flow."""
-    state = initialize_lsq(params, mask, linearize, options)
+    """Run the host LM loop from an initialized state."""
     while int(state.termination_code) == LSQTermination.running:
         previous = state
         trial, candidate_model = evaluate_lm_trial(state, mask, linearize)
@@ -765,7 +780,8 @@ def solve_robust(
 ) -> RobustResult:
     """Drive shared robust state transitions with JAX control flow."""
     mask = policy.get_init_mask()
-    result = solve_lsq(params, mask, linearize, options)
+    model = linearize_at(params, mask, linearize)
+    result = solve_lsq(initialize_lsq(params, model, options), mask, linearize, options)
     initial = initialize_robust(result, mask)
 
     def step(state: RobustState) -> RobustState:
@@ -774,7 +790,7 @@ def solve_robust(
         next_result = jax.lax.cond(
             changed,
             lambda: solve_lsq(
-                state.result.params,
+                initialize_refit(state.result, rejection.flat_inlier_mask, options),
                 rejection.flat_inlier_mask,
                 linearize,
                 options,

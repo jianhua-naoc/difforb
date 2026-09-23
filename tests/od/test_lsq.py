@@ -14,6 +14,7 @@ from difforb.od.dc.lsq.core import (
     compute_unweighted_rms,
     evaluate_lm_trial,
     initialize_lsq,
+    linearize_at,
 )
 from difforb.od.outlier.chi2 import Chi2OutlierRejecter
 from difforb.od.outlier.policy import CompiledOutlierPolicy
@@ -333,8 +334,7 @@ def test_least_squares_keeps_linearization_weights_during_trials():
     mask = jnp.asarray([True])
     state = initialize_lsq(
         x0,
-        mask,
-        linearize,
+        linearize_at(x0, mask, linearize),
         LMOptions(50, solver.max_damping_iter, solver.damping_init),
     )
     trial, candidate_model = evaluate_lm_trial(state, mask, linearize)

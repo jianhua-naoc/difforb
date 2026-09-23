@@ -11,6 +11,7 @@ from difforb.od.dc.lsq.core import (
     advance_lsq,
     compute_correction_norm,
     initialize_lsq,
+    linearize_at,
     compute_prior_covariance,
     update_lm_state,
 )
@@ -150,7 +151,7 @@ def test_stagnation_counter_resets_on_improvement_and_ignores_rejected_trials(re
     linearize = lambda x: (jnp.ones((1, 1)), residual(x), jnp.empty((0, 2, 2)), jnp.ones(1))
     x, mask = jnp.zeros(1), jnp.ones(1, bool)
     options = LMOptions(max_iter=20, max_damping_iter=10, damping_init=1e-3)
-    state = initialize_lsq(x, mask, linearize, options)._replace(stagnant_steps=jnp.asarray(9))
+    state = initialize_lsq(x, linearize_at(x, mask, linearize), options)._replace(stagnant_steps=jnp.asarray(9))
     state = advance_lsq(state, mask, linearize, options)
     assert state.stagnant_steps == (9 if reject else 0)
     assert state.termination_code == LSQTermination.running
@@ -160,7 +161,7 @@ def test_half_tenth_percent_rms_improvement_resets_stagnation():
     residual, linearize = plateau_problem()
     options = LMOptions(max_iter=20, max_damping_iter=10, damping_init=1e-3)
     state = initialize_lsq(
-        jnp.ones(1), jnp.ones(2, bool), linearize, options,
+        jnp.ones(1), linearize_at(jnp.ones(1), jnp.ones(2, bool), linearize), options,
     )._replace(stagnant_steps=jnp.asarray(9))
     next_model = state.model._replace(rms=state.model.rms * (1.0 - 5e-4))
     trial = LMTrial(
@@ -472,7 +473,7 @@ def test_solver_jit_respects_enclosing_disable_context(solver_jit):
 def test_python_loops_bypass_complete_compiled_driver(monkeypatch, robust):
     from difforb.od.dc.lsq import core
 
-    calls = dict(initialize=0, evaluate_lm_trial=0, finish=0)
+    calls = dict(evaluate_lm_trial=0, finish=0)
 
     def observe(name, compiled):
         def invoke(*args, **kwargs):
@@ -482,7 +483,6 @@ def test_python_loops_bypass_complete_compiled_driver(monkeypatch, robust):
         return invoke
 
     attrs = {
-        "initialize": "initialize_lsq",
         "evaluate_lm_trial": "evaluate_lm_trial",
         "finish": "finish_lsq",
     }
@@ -505,5 +505,5 @@ def test_python_loops_bypass_complete_compiled_driver(monkeypatch, robust):
         fit = inner.solve(jnp.asarray([10.]), jnp.ones(4, bool), linearize)
         expected_fits = 1
     assert fit.converged
-    assert calls["initialize"] == calls["finish"] == expected_fits
+    assert calls["finish"] == expected_fits
     assert calls["evaluate_lm_trial"] >= int(fit.iter_num)
