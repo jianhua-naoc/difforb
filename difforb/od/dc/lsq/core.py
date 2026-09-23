@@ -736,6 +736,7 @@ def continue_robust(
     )
 
 
+@eqx.filter_jit
 def finish_robust(
         state: RobustState,
         policy: CompiledOutlierPolicy,
