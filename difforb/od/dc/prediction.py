@@ -158,45 +158,51 @@ class AstrometryMeasurementModel(NamedTuple):
     ]:
         """Evaluate residuals and optional rates from one propagated trajectory."""
         sun, earth = self.sun, self.earth
-        optical_context = LightTimeContext(sun=sun, earth=earth, shapiro_bodies=self.shapiro_bodies)
-        radar_context = LightTimeContext(sun=sun, earth=earth, atmos_cor_enable=True, corona_cor_enable=True,
-                                         shapiro_bodies=self.shapiro_bodies)
         target, photocenter_correction = self._target_and_photocenter(params, force_model, integrator)
 
-        astro_path = compute_astrometric_vector(
-            self.optical_t, self.optical_rx, target, optical_context
-        )
-        astro_path = photocenter_correction.apply(sun, astro_path, self.optical_photocenter_mask)
-        bent_pos = correct_light_bending(sun, astro_path)
-        pred_ra, pred_dec = car2sph(bent_pos)
-        opt_pred = jnp.stack([pred_ra, pred_dec], axis=1)
-
-        radar_obs = compute_radar_obs(
-            self.radar_t, target, self.radar_rx, self.radar_tx,
-            self.radar_tx_freq, radar_context
-        )
-        candidates = [
-            radar_obs.delay, radar_obs.doppler_shift,
-        ]
-        flat_rad_pred = jnp.where(self.radar_types == 0, candidates[0], candidates[1])
-
-        raw_opt_residuals = self.optical_values - opt_pred
-        raw_ra_residuals = raw_opt_residuals[..., 0]
-        ra_residuals = jnp.mod(raw_ra_residuals + jnp.pi, 2. * jnp.pi) - jnp.pi
-        obs_dec = self.optical_values[..., 1]
-        ra_residuals = ra_residuals * jnp.cos(obs_dec)
-        dec_residuals = raw_opt_residuals[..., 1]
-        flat_opt_residuals = jnp.stack([ra_residuals, dec_residuals], axis=1).ravel()
-        flat_rad_residuals = self.radar_values - flat_rad_pred
-        flat_residuals = jnp.concatenate([flat_opt_residuals, flat_rad_residuals])
-
         optical_rates = None
-        if include_optical_rates:
-            # These rates are auxiliary values, not additional residuals.
-            optical_rates = _sky_plane_rates(
-                jax.lax.stop_gradient(bent_pos),
-                jax.lax.stop_gradient(astro_path.vel),
+        if self.optical_values.shape[0] > 0:
+            optical_context = LightTimeContext(sun=sun, earth=earth, shapiro_bodies=self.shapiro_bodies)
+            astro_path = compute_astrometric_vector(
+                self.optical_t, self.optical_rx, target, optical_context
             )
+            astro_path = photocenter_correction.apply(sun, astro_path, self.optical_photocenter_mask)
+            bent_pos = correct_light_bending(sun, astro_path)
+            pred_ra, pred_dec = car2sph(bent_pos)
+            opt_pred = jnp.stack([pred_ra, pred_dec], axis=1)
+
+            raw_opt_residuals = self.optical_values - opt_pred
+            raw_ra_residuals = raw_opt_residuals[..., 0]
+            ra_residuals = jnp.mod(raw_ra_residuals + jnp.pi, 2. * jnp.pi) - jnp.pi
+            obs_dec = self.optical_values[..., 1]
+            ra_residuals = ra_residuals * jnp.cos(obs_dec)
+            dec_residuals = raw_opt_residuals[..., 1]
+            flat_opt_residuals = jnp.stack([ra_residuals, dec_residuals], axis=1).ravel()
+
+            if include_optical_rates:
+                # These rates are auxiliary values, not additional residuals.
+                optical_rates = _sky_plane_rates(
+                    jax.lax.stop_gradient(bent_pos),
+                    jax.lax.stop_gradient(astro_path.vel),
+                )
+        else:
+            flat_opt_residuals = jnp.empty((0,), dtype=params.dtype)
+            if include_optical_rates:
+                optical_rates = jnp.empty((0, 2), dtype=params.dtype)
+
+        if self.radar_values.shape[0] > 0:
+            radar_context = LightTimeContext(sun=sun, earth=earth, atmos_cor_enable=True, corona_cor_enable=True,
+                                             shapiro_bodies=self.shapiro_bodies)
+            radar_obs = compute_radar_obs(
+                self.radar_t, target, self.radar_rx, self.radar_tx,
+                self.radar_tx_freq, radar_context
+            )
+            flat_rad_pred = jnp.where(self.radar_types == 0, radar_obs.delay, radar_obs.doppler_shift)
+            flat_rad_residuals = self.radar_values - flat_rad_pred
+        else:
+            flat_rad_residuals = jnp.empty((0,), dtype=params.dtype)
+
+        flat_residuals = jnp.concatenate([flat_opt_residuals, flat_rad_residuals])
         return flat_residuals, (flat_residuals, optical_rates)
 
     def compute_residuals_core(self, params: Float[Array, "N_param"], force_model: ForceModel, integrator:
