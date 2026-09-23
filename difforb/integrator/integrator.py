@@ -41,13 +41,16 @@ def evaluate_single(
         jd2: Float[Array, ""],
 ) -> tuple[Float[Array, "3"], Float[Array, "3"]]:
     tau = (jd1 - interp.t0_jd1) + (jd2 - interp.t0_jd2)
-    pos, vel = jax.lax.cond(
-        tau >= 0.,
-        lambda _: interp.sol_fwd.evaluate(tau),
-        lambda _: interp.sol_bwd.evaluate(tau),
-        operand=None
+    forward = tau >= 0.
+    # Select query times and results to avoid broadcasting dense trajectories through a vmapped cond.
+    # Query the unused direction at the reference epoch, which both solutions cover.
+    fwd = interp.sol_fwd.evaluate(jnp.where(forward, tau, 0.))
+    bwd = interp.sol_bwd.evaluate(jnp.where(forward, 0., tau))
+    return jax.tree.map(
+        lambda fwd_value, bwd_value: jnp.where(forward, fwd_value, bwd_value),
+        fwd,
+        bwd,
     )
-    return pos, vel
 
 
 class BiDirectionalInterpolator(BatchableObject):
