@@ -53,11 +53,11 @@ members = [
 ]
 
 [datasets.weights]
-title = "Astrometric weighting rule table"
-files = ["weights.csv"]
+title = "Astrometric weighting rule tables"
+files = ["weights_general.csv", "weights_ccd.csv"]
 installable = false
 license = "Bundled with DiffOrb under Apache-2.0."
-instructions = "This DiffOrb-maintained table is bundled with the package. To override it, place weights.csv under the DiffOrb data directory, or pass an explicit filepath to VFCC17WeightPolicy."
+instructions = "These DiffOrb-maintained tables are bundled with the package. To override them, place weights_general.csv or weights_ccd.csv under the DiffOrb data directory. An explicit filepath replaces the full rule table for VFCC17WeightPolicy, or the general rules for CometWeightPolicy."
 
 [datasets.dtdb-series]
 title = "Fairhead-Bretagnon TT/TDB coefficient table"

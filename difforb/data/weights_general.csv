@@ -1,0 +1,23 @@
+obs_type,obs_mode,observer_type,obs_note_code,site_code,program_code,catalog_code,sub_frame,date_min,date_max,sigma,priority,comment
+
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,*,1890-01-01,10.00,20,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,*,1890-01-01,10.00,20,Vereš et al. (2017) Table 5
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,1890-01-01,1950-01-01,5.00,20,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,1890-01-01,1950-01-01,5.00,20,Vereš et al. (2017) Table 5
+OPTICAL,PHOTO|UNKNOWN,*,*,*,*,*,*,1950-01-01,*,2.50,20,Vereš et al. (2017) Table 5
+OPTICAL,*,*,n,*,*,*,*,1950-01-01,*,2.50,20,Vereš et al. (2017) Table 5
+
+OPTICAL,OCCULTATION,*,*,*,*,*,*,*,*,0.05,20,Weighting rule: Occultation
+OPTICAL,PMT,*,*,*,*,*,*,*,*,0.20,20,Weighting rule: Photo-Multiplier Tube
+OPTICAL,MERIDIAN,*,*,*,*,*,*,*,*,0.50,20,Vereš et al. (2017) Table 5: Transit circle
+OPTICAL,ENCODER,*,*,*,*,*,*,*,*,0.75,20,Vereš et al. (2017) Table 5: Encoder
+OPTICAL,MICRO,*,*,*,*,*,*,*,*,2.00,20,Vereš et al. (2017) Table 5: Micrometer
+OPTICAL,TDI,*,*,*,*,*,*,*,*,1.50,20,Weighting rule: Time-delay integration
+OPTICAL,*,SPACE_BASED,*,*,*,*,*,*,*,1.50,20,Vereš et al. (2017) Table 5: Satellite
+OPTICAL,*,SPACE_BASED,*,248,*,*,*,*,*,0.20,20,Vereš et al. (2017) Table 5: Hipparcos
+OPTICAL,VIDEO,*,*,*,*,*,*,*,*,1.00,20,Vereš et al. (2017) Table 5: Mini-normal place
+OPTICAL,VIDEO,*,*,*,*,UNK,*,*,*,1.50,20,Weighting rule: Video catalog unknown
+
+OPTICAL,*,*,*,*,*,*,B1950.0,*,1890-01-01,10.00,40,Vereš et al. (2017) Table 5: B1950 converted photographic
+OPTICAL,*,*,*,*,*,*,B1950.0,1890-01-01,1950-01-01,5.00,40,Vereš et al. (2017) Table 5: B1950 converted photographic
+OPTICAL,*,*,*,*,*,*,B1950.0,1950-01-01,*,2.50,40,Vereš et al. (2017) Table 5: B1950 converted photographic

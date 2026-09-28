@@ -59,7 +59,8 @@ namespaces = true
 "difforb.data" = [
     "README.md",
     "manifest.toml",
-    "weights.csv",
+    "weights_general.csv",
+    "weights_ccd.csv",
     "dtdb_series/*.npy",
     "iau_cio_locator_series/*.npy",
     "iau_nutation_series/*.npy",

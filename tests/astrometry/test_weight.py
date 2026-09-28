@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from difforb.astrometry.io.ades import records_to_observations
-from difforb.astrometry.weight import ADESWeightPolicy, VFCC17WeightPolicy
+from difforb.astrometry.weight import ADESWeightPolicy, CometWeightPolicy, VFCC17WeightPolicy
 
 
 def optical_record(
@@ -54,6 +54,41 @@ def test_vfcc17_sub_frame_rules_assign_b1950_table5_sigmas():
     np.testing.assert_allclose(ra_sigmas_arcsec, np.asarray([0.5, 2.5, 5.0, 10.0]), rtol=0.0, atol=1.0e-12)
     np.testing.assert_allclose(dec_sigmas_arcsec, np.asarray([0.5, 2.5, 5.0, 10.0]), rtol=0.0, atol=1.0e-12)
     np.testing.assert_allclose(weights.optical_correlations, np.zeros(4), rtol=0.0, atol=0.0)
+
+
+def test_vfcc17_general_ccd_and_b1950_rule_priorities():
+    rows = [
+        optical_record("2025-01-01T00:00:00", station="F51"),
+        optical_record("2025-01-01T00:00:00", station="C51", system="ICRFAU", position=(1., 0., 0.)),
+        optical_record("2025-01-01T00:00:00", station="248", system="ICRFAU", position=(1., 0., 0.)),
+        optical_record("1900-01-01T00:00:00", station="F51"),
+        optical_record("1900-01-01T00:00:00", station="F51", subfrm="B1950.0"),
+    ]
+    rows[3]["notes"] = "n"
+    result = VFCC17WeightPolicy().weights(records_to_observations(rows))
+    expected = np.repeat(np.array([.2, 1., .2, .2, 5.])[:, None], 2, axis=1)
+    np.testing.assert_allclose(np.rad2deg(result.optical_uncertainties) * 3600, expected, rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize(("policy_class", "unmatched_sigma"), [(CometWeightPolicy, 1.), (VFCC17WeightPolicy, 0.)])
+@pytest.mark.parametrize(("priorities", "sigma"), [(None, 2.), ((30, 10), 1.), ((10, 10), 2.)])
+def test_custom_rule_table_replaces_builtins_and_preserves_rule_order(tmp_path, policy_class, unmatched_sigma, priorities, sigma):
+    table = [
+        "obs_type,obs_mode,observer_type,obs_note_code,site_code,program_code,catalog_code,sub_frame,date_min,date_max,sigma,comment",
+        "OPTICAL,CCD,*,*,*,*,*,*,*,*,1.0,first",
+        "OPTICAL,CCD,*,*,*,*,*,*,*,*,2.0,second",
+    ]
+    if priorities is not None:
+        table = [table[0] + ",priority"] + [f"{row},{priority}" for row, priority in zip(table[1:], priorities)]
+    filepath = tmp_path / "weights.csv"
+    filepath.write_text("\n".join(table) + "\n")
+    obs = records_to_observations([
+        optical_record("2025-01-01T00:00:00", station="F51", subfrm="B1950.0"),
+        optical_record("1900-01-01T00:00:00", mode="PHO"),
+    ])
+    result = policy_class(filepath=str(filepath)).weights(obs)
+    expected = np.repeat(np.array([sigma, unmatched_sigma])[:, None], 2, axis=1)
+    np.testing.assert_allclose(np.rad2deg(result.optical_uncertainties) * 3600, expected, rtol=0, atol=1e-12)
 
 
 def test_vfcc17_grss_station_defaults_survive_orbfit_cleanup():

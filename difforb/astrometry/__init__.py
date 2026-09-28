@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from difforb.astrometry.reduction.photocenter import PhotocenterCorrection
     from difforb.astrometry.weight import (
         ADESWeightPolicy,
+        CometWeightPolicy,
         InteractiveWeightPolicy,
         UnitWeightPolicy,
         VFCC17WeightPolicy,
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 _EXPORTS = {
     "ADESWeightPolicy": ("difforb.astrometry.weight", "ADESWeightPolicy"),
+    "CometWeightPolicy": ("difforb.astrometry.weight", "CometWeightPolicy"),
     "AstrometricDebiasMap": ("difforb.astrometry.debias", "AstrometricDebiasMap"),
     "DebiasPolicy": ("difforb.astrometry.debias", "DebiasPolicy"),
     "DebiasResult": ("difforb.astrometry.debias", "DebiasResult"),

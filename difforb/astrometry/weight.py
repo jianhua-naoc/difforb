@@ -5,7 +5,6 @@ This module defines the rule and policy layer used to convert reported observati
 Optical uncertainties are carried as two-component tangent-plane sigmas in radians, with an optional per-row correlation coefficient. Radar uncertainties are carried as one scalar sigma per row in the native measurement unit already stored by the radar observation table. Interactive overrides operate on the original mixed-input indices exposed by the observation containers.
 """
 
-import os
 from abc import ABC, abstractmethod
 from typing import Iterable
 
@@ -18,11 +17,12 @@ from difforb.astrometry.data import (
     ObservationData, ObsType, ObsMode, ObserverType,
 )
 from difforb.body.site import parse_site_keys
-from difforb.core.config import get_data_path, missing_data_message
+from difforb.core.config import get_data_path
 from difforb.core.constants import ARCSEC_TO_DEG, DAY_S
 from difforb.core.time.timescale import Time
 
-DEFAULT_WEIGHT_SCHEME_FILENAME = str(get_data_path("weights.csv", dataset="weights", must_exist=False))
+DEFAULT_GENERAL_WEIGHT_SCHEME_FILENAME = str(get_data_path("weights_general.csv", dataset="weights", must_exist=False))
+DEFAULT_CCD_WEIGHT_SCHEME_FILENAME = str(get_data_path("weights_ccd.csv", dataset="weights", must_exist=False))
 
 
 def _tracklet_group_counts(
@@ -58,7 +58,7 @@ class WeightRule:
     def __init__(self, obs_type: str, obs_mode: str, observer_type: str, obs_note_code: str, site_code: str,
                  program_code: str, catalog_code: str, sub_frame: str, date_min: Time | None,
                  date_max: Time | None,
-                 sigma: float, comment: str):
+                 sigma: float, comment: str, priority: int = 0):
         """Initialize a weighting-rule row.
 
         Parameters
@@ -88,6 +88,8 @@ class WeightRule:
             Scalar one-axis optical uncertainty in arcseconds before conversion to radians by the policy.
         comment : str
             Human-readable rule annotation carried from the source table.
+        priority : int, default=0
+            Application order. Higher-priority rules override lower-priority rules; equal priorities retain CSV row order.
         """
         self.obs_type = obs_type
         self.obs_mode = obs_mode
@@ -101,6 +103,48 @@ class WeightRule:
         self.date_max = date_max
         self.sigma = sigma
         self.comment = comment
+        self.priority = priority
+
+    @classmethod
+    def from_csv(cls, filepaths: Iterable[str]) -> list["WeightRule"]:
+        """Build weighting rules from CSV tables.
+
+        Parameters
+        ----------
+        filepaths : iterable of str
+            Weighting-rule tables to combine. Files use ``"!"`` as the comment prefix.
+
+        Returns
+        -------
+        list of WeightRule
+            Rules in increasing priority, preserving file and row order for ties. Tables without ``priority`` retain their original row order.
+        """
+        rules = []
+        for filepath in filepaths:
+            df = pd.read_csv(filepath, comment="!")
+            df["priority"] = df.get("priority", 0)
+            df = df.where(pd.notnull(df), None)
+            for _, row in df.iterrows():
+                if row.date_min != cls.WILDCARD:
+                    year, month, day = row.date_min.split('-')
+                    date_min = Time.from_ut_date(float(year.strip()), float(month.strip()),
+                                                 float(day.strip()))
+                else:
+                    date_min = None
+                if row.date_max != cls.WILDCARD:
+                    year, month, day = row.date_max.split('-')
+                    date_max = Time.from_ut_date(float(year.strip()), float(month.strip()),
+                                                 float(day.strip()))
+                else:
+                    date_max = None
+                rules.append(cls(obs_type=row.obs_type, obs_mode=row.obs_mode,
+                                 observer_type=row.observer_type, obs_note_code=row.obs_note_code, site_code=row.site_code,
+                                 program_code=row.program_code, catalog_code=row.catalog_code,
+                                 sub_frame=row.sub_frame,
+                                 date_min=date_min, date_max=date_max,
+                                 sigma=row.sigma,
+                                 comment=row.comment, priority=row.priority))
+        return sorted(rules, key=lambda rule: rule.priority)
 
     def match_mask(self, obs: OpticalObservationData) -> Bool[np.ndarray, "N"]:
         """Return the rows matched by this rule.
@@ -156,6 +200,39 @@ class WeightRule:
             mask &= np.asarray(obs.t < self.date_max)
 
         return mask
+
+    @staticmethod
+    def evaluate(
+            obs: OpticalObservationData,
+            rules: Iterable["WeightRule"],
+            *,
+            default_sigma_arcsec: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate weighting rules for an optical observation table.
+
+        Parameters
+        ----------
+        obs : OpticalObservationData
+            Optical observations to match.
+        rules : iterable of WeightRule
+            Rules in application order. Later matches override earlier ones.
+        default_sigma_arcsec : float
+            One-axis uncertainty in arcseconds for rows not matched by any rule.
+
+        Returns
+        -------
+        ndarray, shape (N_optical,)
+            One-axis optical uncertainties in radians, before density scaling.
+        ndarray, shape (N_optical,)
+            Boolean mask of rows matched by any rule.
+        """
+        optical_sigmas = np.full(len(obs), np.deg2rad(default_sigma_arcsec * ARCSEC_TO_DEG), dtype=float)
+        matched_mask = np.zeros(len(obs), dtype=bool)
+        for rule in rules:
+            rule_mask = rule.match_mask(obs)
+            matched_mask |= rule_mask
+            optical_sigmas[rule_mask] = np.deg2rad(rule.sigma * ARCSEC_TO_DEG)
+        return optical_sigmas, matched_mask
 
 
 class WeightResult:
@@ -255,7 +332,8 @@ class WeightResult:
         covariances[:, 1, 0] = covariance_xy
         return covariances
 
-    def optical_covariances_with_time(self, optical_rates: Float[np.ndarray, "N_optical 2"]) -> Float[np.ndarray, "N_optical 2 2"]:
+    def optical_covariances_with_time(self, optical_rates: Float[np.ndarray, "N_optical 2"]) -> Float[
+        np.ndarray, "N_optical 2 2"]:
         """Return optical covariance blocks inflated by time uncertainty.
 
         Parameters
@@ -325,7 +403,8 @@ class WeightResult:
         weight_matrices[:, 1, 0] = off_diag
         return weight_matrices
 
-    def optical_weight_matrices_with_time(self, optical_rates: Float[np.ndarray, "N_optical 2"]) -> Float[np.ndarray, "N_optical 2 2"]:
+    def optical_weight_matrices_with_time(self, optical_rates: Float[np.ndarray, "N_optical 2"]) -> Float[
+        np.ndarray, "N_optical 2 2"]:
         """Return optical inverse-covariance blocks inflated by time uncertainty."""
         return np.linalg.inv(self.optical_covariances_with_time(optical_rates))
 
@@ -628,48 +707,71 @@ class ADESWeightPolicy(UnitWeightPolicy):
         )
 
 
-class VFCC17WeightPolicy(UnitWeightPolicy):
-    """Apply the Vereš-Farnocchia-Chesley-Chatelain 2017 optical weighting table.
+class CometWeightPolicy(UnitWeightPolicy):
+    """Apply general observation rules with a one-arcsecond comet default.
 
-    The policy reads a CSV rule table and assigns one scalar optical sigma per matched observation row. The scalar sigma is then duplicated onto right ascension and declination. Radar rows are passed through unchanged from the input observation bundle.
+    The shared general table sets the one-axis uncertainty for photographic and other observation types. Unmatched rows retain one arcsecond in both ``RA*cos(dec)`` and declination. CCD station, program, and catalog rules are not applied.
+
+    Notes
+    -----
+    Base uncertainties are multiplied by ``sqrt(N/4)`` when more than four rows share a station and a nonempty tracklet identifier, as in :class:`VFCC17WeightPolicy`. Missing identifiers remain ungrouped. Counts use the full supplied optical table, independently of later inlier selection. Radar uncertainties pass through unchanged; optical correlations and time uncertainties are zero.
     """
-    WILDCARD = "*"
-    COMMENT = "!"
 
-    def __init__(self, filepath: str = DEFAULT_WEIGHT_SCHEME_FILENAME):
-        """Initialize the ``VFCC17`` weighting policy from a CSV rule table.
+    def __init__(self, filepath: str = DEFAULT_GENERAL_WEIGHT_SCHEME_FILENAME):
+        """Initialize a comet policy from a general weighting-rule CSV file.
 
         Parameters
         ----------
-        filepath : str, default=DEFAULT_WEIGHT_SCHEME_FILENAME
-            Path to the weighting-rule CSV file. The file is read with ``"!"`` as the comment prefix.
+        filepath : str, optional
+            Replacement for the bundled general rule table. Rows are applied by increasing ``priority``, retaining file order for ties. Without a ``priority`` column, file order is used.
         """
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(missing_data_message("weights", filepath))
-        df = pd.read_csv(filepath, comment=self.COMMENT)
-        df = df.where(pd.notnull(df), None)  # convert empty string to None
-        rules = []
-        for _, row in df.iterrows():
-            if row.date_min != self.WILDCARD:
-                year, month, day = row.date_min.split('-')
-                date_min = Time.from_ut_date(float(year.strip()), float(month.strip()),
-                                             float(day.strip()))
-            else:
-                date_min = None
-            if row.date_max != self.WILDCARD:
-                year, month, day = row.date_max.split('-')
-                date_max = Time.from_ut_date(float(year.strip()), float(month.strip()),
-                                             float(day.strip()))
-            else:
-                date_max = None
-            rules.append(WeightRule(obs_type=row.obs_type, obs_mode=row.obs_mode,
-                                    observer_type=row.observer_type, obs_note_code=row.obs_note_code, site_code=row.site_code,
-                                    program_code=row.program_code, catalog_code=row.catalog_code,
-                                    sub_frame=row.sub_frame,
-                                    date_min=date_min, date_max=date_max,
-                                    sigma=row.sigma,
-                                    comment=row.comment))
-        self.rules = rules
+        self.rules = WeightRule.from_csv([filepath])
+
+    @property
+    def name(self) -> str:
+        return "Comet 1 arcsec"
+
+    @property
+    def source_name(self) -> str:
+        return "COMET_1ARCSEC"
+
+    def uncertainties(self, obs: ObservationData) -> Float[np.ndarray, "N_optical 2"]:
+        """Return tangent-plane sigmas in radians after station-tracklet density scaling."""
+        sigmas, _ = WeightRule.evaluate(obs.optical, self.rules, default_sigma_arcsec=1.0)
+        site_codes = np.asarray(parse_site_keys(obs.optical.rx_codes).codes, dtype=str)
+        counts = _tracklet_group_counts(obs.optical.trk_ids, site_codes)
+        sigmas *= np.sqrt(np.maximum(counts, 4) / 4.0)
+        return np.repeat(sigmas[:, None], 2, axis=1)
+
+    def weights(self, obs: ObservationData) -> WeightResult:
+        """Resolve optical uncertainties in radians and preserve reported radar errors."""
+        optical_uncertainties = self.uncertainties(obs)
+        n = len(optical_uncertainties)
+        radar_sigmas = obs.radar.uncertainties.copy()
+        return WeightResult(
+            optical_uncertainties,
+            radar_sigmas,
+            np.full(n, self.source_name),
+            np.full(len(radar_sigmas), "ADES"),
+            np.zeros(n),
+            np.zeros(n),
+        )
+
+
+class VFCC17WeightPolicy(UnitWeightPolicy):
+    """Apply the Vereš-Farnocchia-Chesley-Chatelain 2017 optical weighting table."""
+
+    def __init__(self, filepath: str | None = None):
+        """Initialize the ``VFCC17`` weighting policy from CSV rule tables.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            Complete replacement rule table. By default, the bundled general and CCD tables are combined. Rows are applied by increasing ``priority``, retaining file order for ties. Without a ``priority`` column, file order is used. Files use ``"!"`` as the comment prefix.
+        """
+        filepaths = [DEFAULT_GENERAL_WEIGHT_SCHEME_FILENAME, DEFAULT_CCD_WEIGHT_SCHEME_FILENAME] if filepath is None else [
+            filepath]
+        self.rules = WeightRule.from_csv(filepaths)
 
     @property
     def name(self) -> str:
@@ -703,8 +805,7 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
         The over-observation scaling uses the ``N/4`` rule from
         Vereš et al. (2017): sigmas are multiplied by ``sqrt(N/4)`` when
         ``N > 4``. Here ``N`` counts rows sharing both an observatory code
-        and a nonempty tracklet identifier in the optical table. Observer
-        position payloads are excluded from the station key. Missing
+        and a nonempty tracklet identifier in the optical table. Missing
         tracklet identifiers remain ungrouped and do not trigger scaling.
         The paper groups observations by station and observing night;
         this implementation uses reported tracklets instead of nights.
@@ -713,12 +814,7 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
         ----------
         1. Vereš, P., Farnocchia, D., Chesley, S. R., & Chamberlin, A. B. (2017). Statistical analysis of astrometric errors for the most productive asteroid surveys. Icarus, 296, 139-144.
         """
-        optical_sigmas = np.deg2rad(np.zeros(len(obs.optical)) * ARCSEC_TO_DEG)
-        matched_mask = np.zeros(len(obs.optical), dtype=bool)
-        for rule in self.rules:
-            rule_mask = rule.match_mask(obs.optical)
-            matched_mask |= rule_mask
-            optical_sigmas[rule_mask] = np.deg2rad(rule.sigma * ARCSEC_TO_DEG)
+        optical_sigmas, matched_mask = WeightRule.evaluate(obs.optical, self.rules, default_sigma_arcsec=0.0)
         n_max = 4
         site_codes = np.asarray(parse_site_keys(obs.optical.rx_codes).codes, dtype=str)
         tracklet_counts = _tracklet_group_counts(obs.optical.trk_ids, site_codes)
@@ -729,7 +825,7 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
     def time_uncertainties(self, obs: ObservationData) -> Float[np.ndarray, "N_optical"]:
         """Resolve VFCC17 optical time uncertainties in seconds.
 
-        Missing ordinary optical times receive the GRSS/VFCC17 default of
+        Missing ordinary optical times receive the default of
         ``1.0`` second. Gaia, occultation, and space-observer rows are left as
         ``NaN`` so downstream covariance inflation skips them.
         """
@@ -748,7 +844,7 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
         return time_uncertainties
 
     def weights(self, obs: ObservationData) -> WeightResult:
-        """Build a full weight bundle from the ``VFCC17`` optical sigmas.
+        """Build a full weight from the ``VFCC17`` optical sigmas.
 
         Parameters
         ----------

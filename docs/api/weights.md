@@ -2,6 +2,8 @@
 
 ::: difforb.astrometry.ADESWeightPolicy
 
+::: difforb.astrometry.CometWeightPolicy
+
 ::: difforb.astrometry.InteractiveWeightPolicy
 
 ::: difforb.astrometry.UnitWeightPolicy
