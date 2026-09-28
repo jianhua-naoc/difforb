@@ -25,15 +25,24 @@ from difforb.core.time.timescale import Time
 DEFAULT_WEIGHT_SCHEME_FILENAME = str(get_data_path("weights.csv", dataset="weights", must_exist=False))
 
 
-def _tracklet_group_counts(trk_ids: Shaped[np.ndarray, "N"]) -> np.ndarray:
-    """Return per-row tracklet counts without grouping missing identifiers."""
+def _tracklet_group_counts(
+        trk_ids: Shaped[np.ndarray, "N"],
+        site_codes: Shaped[np.ndarray, "N"],
+) -> np.ndarray:
+    """Count rows per station and tracklet, leaving missing identifiers ungrouped."""
     trk_series = pd.Series(np.asarray(trk_ids, dtype=object)).map(
         lambda value: "" if pd.isna(value) else str(value).strip()
     )
     valid_mask = (trk_series != "") & (trk_series.str.lower() != "nan")
     counts = np.ones(len(trk_series), dtype=int)
     if valid_mask.any():
-        valid_counts = trk_series[valid_mask].groupby(trk_series[valid_mask]).transform("count")
+        groups = pd.DataFrame({
+            "station": np.asarray(site_codes, dtype=str),
+            "tracklet": trk_series,
+        })
+        valid_counts = groups.loc[valid_mask].groupby(
+            ["station", "tracklet"]
+        )["tracklet"].transform("count")
         counts[valid_mask.to_numpy()] = valid_counts.to_numpy(dtype=int)
     return counts
 
@@ -691,9 +700,14 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
         -----
         The rule table stores one optical sigma value in arcseconds per matched row. This method converts that scalar to radians and applies it identically to right ascension and declination.
 
-        The over-observation scaling follows the ``N/4`` rule from
-        Vereš et al. (2017). Rows are counted per tracklet identifier within
-        the unified optical table.
+        The over-observation scaling uses the ``N/4`` rule from
+        Vereš et al. (2017): sigmas are multiplied by ``sqrt(N/4)`` when
+        ``N > 4``. Here ``N`` counts rows sharing both an observatory code
+        and a nonempty tracklet identifier in the optical table. Observer
+        position payloads are excluded from the station key. Missing
+        tracklet identifiers remain ungrouped and do not trigger scaling.
+        The paper groups observations by station and observing night;
+        this implementation uses reported tracklets instead of nights.
 
         References
         ----------
@@ -706,7 +720,8 @@ class VFCC17WeightPolicy(UnitWeightPolicy):
             matched_mask |= rule_mask
             optical_sigmas[rule_mask] = np.deg2rad(rule.sigma * ARCSEC_TO_DEG)
         n_max = 4
-        tracklet_counts = _tracklet_group_counts(obs.optical.trk_ids)
+        site_codes = np.asarray(parse_site_keys(obs.optical.rx_codes).codes, dtype=str)
+        tracklet_counts = _tracklet_group_counts(obs.optical.trk_ids, site_codes)
         over_mask = (tracklet_counts > n_max) & matched_mask
         optical_sigmas[over_mask] *= np.sqrt(tracklet_counts[over_mask] / n_max)
         return np.repeat(optical_sigmas, 2).reshape(-1, 2)

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from difforb.astrometry.io.ades import records_to_observations
 from difforb.astrometry.weight import ADESWeightPolicy, VFCC17WeightPolicy
@@ -130,6 +131,73 @@ def test_vfcc17_over_observation_scales_nonempty_tracklet():
     np.testing.assert_allclose(
         ra_sigmas_arcsec,
         np.full(5, 0.8 * np.sqrt(5.0 / 4.0)),
+        rtol=0.0,
+        atol=1.0e-12,
+    )
+
+
+@pytest.mark.parametrize("station_counts", [(4, 3), (5, 3), (5, 6)])
+def test_vfcc17_over_observation_counts_shared_tracklet_per_station(station_counts):
+    stations = [("T08", 0.8), ("F51", 0.2)]
+    records = []
+    expected_sigmas = []
+    for minute in range(max(station_counts)):
+        for (station, sigma), count in zip(stations, station_counts):
+            if minute < count:
+                records.append(optical_record(
+                    f"2025-01-01T00:{minute:02d}:00",
+                    station=station,
+                    trkid="shared-tracklet",
+                ))
+                expected_sigmas.append(sigma * np.sqrt(max(count, 4) / 4.0))
+    observations = records_to_observations(records)
+
+    weights = VFCC17WeightPolicy().weights(observations)
+    sigmas_arcsec = np.rad2deg(weights.optical_uncertainties) * 3600.0
+
+    np.testing.assert_allclose(
+        sigmas_arcsec,
+        np.repeat(np.asarray(expected_sigmas)[:, None], 2, axis=1),
+        rtol=0.0,
+        atol=1.0e-12,
+    )
+
+
+def test_vfcc17_over_observation_keeps_distinct_tracklets_at_one_station():
+    observations = records_to_observations([
+        optical_record(
+            f"2025-01-01T00:{minute:02d}:00",
+            station="T08",
+            trkid=tracklet,
+        )
+        for minute in range(4)
+        for tracklet in ("tracklet-a", "tracklet-b")
+    ])
+
+    weights = VFCC17WeightPolicy().weights(observations)
+    sigmas_arcsec = np.rad2deg(weights.optical_uncertainties) * 3600.0
+
+    np.testing.assert_allclose(sigmas_arcsec, np.full((8, 2), 0.8), rtol=0.0, atol=1.0e-12)
+
+
+def test_vfcc17_over_observation_uses_station_code_without_position_payload():
+    observations = records_to_observations([
+        optical_record(
+            f"2025-01-01T00:{index:02d}:00",
+            station="270",
+            system="WGS84",
+            position=(-70.0 + index, 35.0 + index * 0.1, 100.0 + index),
+            trkid="roving-tracklet",
+        )
+        for index in range(5)
+    ])
+
+    weights = VFCC17WeightPolicy().weights(observations)
+    sigmas_arcsec = np.rad2deg(weights.optical_uncertainties) * 3600.0
+
+    np.testing.assert_allclose(
+        sigmas_arcsec,
+        np.full((5, 2), 2.0 * np.sqrt(5.0 / 4.0)),
         rtol=0.0,
         atol=1.0e-12,
     )
