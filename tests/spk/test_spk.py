@@ -189,15 +189,24 @@ def test_compute_pva_single():
     assert_allclose(actual_acc, expected_acc, atol=1.0e-13, rtol=0.0)
 
 
-def test_compute_pva_single_matches_position_derivatives_at_chunk_boundary():
+@pytest.mark.parametrize(("offset", "scale"), [(0.0, -1.0), (1.0, -1.0), (2.0, 1.0)])
+def test_spk_derivatives_at_chunk_boundary(offset, scale):
     args = (
         jnp.asarray([0.0], dtype=float),
-        jnp.asarray([1]),
+        jnp.asarray([2]),
         jnp.asarray([DAY_SECONDS], dtype=float),
-        SEGMENT_COEFFICIENTS,
+        jnp.repeat(SEGMENT_COEFFICIENTS, 2, axis=-1),
         J2000_JD,
     )
-    tdb_jd2 = jnp.asarray(0.0, dtype=float)
+    tdb_jd2 = jnp.asarray(offset, dtype=float)
+    expected_vel = jnp.asarray([(2.0 + 12.0 * scale) * 2.0, 10.0, 0.0])
+    expected_acc = jnp.asarray([48.0, 0.0, 0.0])
+    pv_pos, pv_vel = compute_pv_single(*args, tdb_jd2)
+    pva_pos, pva_vel, pva_acc = compute_pva_single(*args, tdb_jd2)
+    assert_array_equal(pv_pos, pva_pos)
+    assert_array_equal(pv_vel, expected_vel)
+    assert_array_equal(pva_vel, expected_vel)
+    assert_array_equal(pva_acc, expected_acc)
 
     def position(offset):
         return compute_position_single(*args, offset)
@@ -205,17 +214,15 @@ def test_compute_pva_single_matches_position_derivatives_at_chunk_boundary():
     def position_and_velocity(offset):
         return jax.jvp(position, (offset,), (jnp.asarray(1.0),))
 
-    expected_pos, expected_vel = position_and_velocity(tdb_jd2)
-    (_, _), (_, expected_acc) = jax.jvp(
+    position_value, position_tangent = position_and_velocity(tdb_jd2)
+    (_, _), (_, velocity_tangent) = jax.jvp(
         position_and_velocity,
         (tdb_jd2,),
         (jnp.asarray(1.0),),
     )
-    actual_pos, actual_vel, actual_acc = compute_pva_single(*args, tdb_jd2)
-
-    assert_array_equal(actual_pos, expected_pos)
-    assert_array_equal(actual_vel, expected_vel)
-    assert_array_equal(actual_acc, expected_acc)
+    assert_array_equal(position_value, pva_pos)
+    assert_array_equal(position_tangent, expected_vel)
+    assert_array_equal(velocity_tangent, expected_acc)
 
 
 def test_compute_position_pv_pva_batch_shapes():

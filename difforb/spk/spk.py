@@ -178,7 +178,9 @@ def select_spk_polynomial(
 def normalize_spk_time(dt_chunk: Array, chunk_length_sec: Array) -> Array:
     """Map an SPK chunk offset to its clipped Chebyshev coordinate."""
     tdb_scale = (2. * dt_chunk / chunk_length_sec) - 1.
-    return jnp.clip(tdb_scale, -1.0, 1.0)
+    # At an endpoint, keep the derivative of the selected polynomial's time
+    # coordinate. jnp.clip halves the tangent at equality.
+    return jnp.where(tdb_scale < -1.0, -1.0, jnp.where(tdb_scale > 1.0, 1.0, tdb_scale))
 
 
 def compute_position_single(seg_starts_sec: Array, chunk_nums: Array, chunk_lengths_sec: Array, coefficients: Array, tdb_jd1: float,
