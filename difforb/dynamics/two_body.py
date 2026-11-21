@@ -6,6 +6,7 @@ Unless noted otherwise, positions are in ``au``, velocities are in ``au / day``,
 """
 
 from functools import partial
+from math import factorial
 from typing import Tuple
 
 import jax
@@ -33,27 +34,30 @@ def C2C3(psi: Float[Array, "N"]) -> Tuple[Float[Array, "N"], Float[Array, "N"]]:
 
     Notes
     -----
-    The implementation switches between elliptic, hyperbolic, and series forms to stay stable near ``psi = 0``.
+    The implementation uses a degree-eight series for ``abs(psi) <= 1`` and the elliptic or hyperbolic forms elsewhere.
 
     References
     ----------
     1. Vallado, D. A. (2022). Fundamentals of Astrodynamics and Applications. Algorithm 1.
     """
-    # psi > 1e-6
-    branch1_mask = psi > 1e-6
+    # psi > 1
+    branch1_mask = psi > 1.
     safe_psi_branch1 = jnp.where(branch1_mask, psi, 1.)
     sqrt_psi = jnp.sqrt(safe_psi_branch1)
     c2_branch1 = (1. - jnp.cos(sqrt_psi)) / safe_psi_branch1
     c3_branch1 = (sqrt_psi - jnp.sin(sqrt_psi)) / (safe_psi_branch1 * sqrt_psi)
-    # psi < -1e-6
-    branch2_mask = psi < -1e-6
+    # psi < -1
+    branch2_mask = psi < -1.
     safe_psi_branch2 = jnp.where(branch2_mask, psi, -1.)
     sqrt_neg_psi = jnp.sqrt(-safe_psi_branch2)
     c2_branch2 = (1. - jnp.cosh(sqrt_neg_psi)) / safe_psi_branch2
     c3_branch2 = (jnp.sinh(sqrt_neg_psi) - sqrt_neg_psi) / (-safe_psi_branch2 * sqrt_neg_psi)
     # other
-    c2_branch3 = 1.0 / 2.0 - psi / 24.0 + psi ** 2 / 720.0 - psi ** 3 / 40320.
-    c3_branch3 = 1.0 / 6.0 - psi / 120.0 + psi ** 2 / 5040.0 - psi ** 3 / 362880.
+    c2_branch3 = jnp.zeros_like(psi)
+    c3_branch3 = jnp.zeros_like(psi)
+    for i in range(8, -1, -1):
+        c2_branch3 = c2_branch3 * psi + (-1.) ** i / factorial(2 * i + 2)
+        c3_branch3 = c3_branch3 * psi + (-1.) ** i / factorial(2 * i + 3)
 
     c2 = jnp.where(branch1_mask, c2_branch1, jnp.where(branch2_mask, c2_branch2, c2_branch3))
     c3 = jnp.where(branch1_mask, c3_branch1, jnp.where(branch2_mask, c3_branch2, c3_branch3))
@@ -128,9 +132,8 @@ def kepler_propagate(init_pos: Float[Array, "N 3"], init_vel: Float[Array, "N 3"
     h_mag2 = jnp.sum(h * h, axis=-1)
     p = h_mag2 / mu
     sqrt_p = jnp.sqrt(p)
-    s = jnp.arctan(p * sqrt_p / (3. * sqrt_mu * dt)) / 2.
-    w = jnp.arctan(jnp.power(jnp.tan(s), 1. / 3.))
-    chi_para = sqrt_p * 2. * (1. / jnp.tan(2. * w))
+    x = 3. * sqrt_mu * dt / (p * sqrt_p)
+    chi_para = 2. * sqrt_p * jnp.sinh(jnp.arcsinh(x) / 3.)
 
     init_chi = jnp.where(mask_cir_or_ell, chi_cir_or_ell, jnp.where(mask_hyp, chi_hyp, chi_para))
 
@@ -139,33 +142,38 @@ def kepler_propagate(init_pos: Float[Array, "N 3"], init_vel: Float[Array, "N 3"
     # ==========================================
     scal = init_pos_vel_dot / sqrt_mu
 
-    def body_func(carry):
-        i, cur_chi, *_ = carry
-        chi2 = cur_chi * cur_chi
-        chi3 = chi2 * cur_chi
+    def evaluate_chi(chi):
+        """Evaluate the time-of-flight residual and coefficients at ``chi``."""
+        chi2 = chi * chi
+        chi3 = chi2 * chi
         psi = chi2 * alpha
         c2, c3 = C2C3(psi)
         scal2 = chi2 * c2
-        scal3 = cur_chi * (1. - psi * c3)
+        scal3 = chi * (1. - psi * c3)
         r = scal2 + scal * scal3 + init_pos_mag * (1. - psi * c2)
-        new_chi = cur_chi + (sqrt_mu * dt - chi3 * c3 - scal * scal2 - init_pos_mag * scal3) * jnp.reciprocal(r)
-        return i + 1, new_chi, cur_chi, psi, c2, c3, r
+        residual = sqrt_mu * dt - chi3 * c3 - scal * scal2 - init_pos_mag * scal3
+        return residual, r, psi, c2, c3
+
+    def body_func(carry):
+        i, cur_chi, _ = carry
+        residual, r, *_ = evaluate_chi(cur_chi)
+        new_chi = cur_chi + residual * jnp.reciprocal(r)
+        return i + 1, new_chi, cur_chi
 
     def cond_func(carry):
-        i, cur_chi, prev_chi, *_ = carry
+        i, cur_chi, prev_chi = carry
         err = jnp.max(jnp.abs(cur_chi - prev_chi), initial=0.)
         return jnp.logical_and(err > tol, i < max_iter)
 
-    n_batch = init_chi.shape[0]
-    init_psi, init_c2, init_c3, init_r = jnp.zeros(n_batch), jnp.zeros(n_batch), jnp.zeros(n_batch), jnp.zeros(n_batch)
-    init_carry = (0, init_chi, init_chi + 1., init_psi, init_c2, init_c3, init_r)
-    _, final_chi, _, psi, c2, c3, r = jax.lax.while_loop(cond_func, body_func, init_carry)
+    init_carry = (0, init_chi, init_chi + 1.)
+    _, final_chi, _ = jax.lax.while_loop(cond_func, body_func, init_carry)
 
     # ==========================================
     # 3. Build the Lagrange coefficients.
     # ==========================================
     chi2 = final_chi * final_chi
     chi3 = chi2 * final_chi
+    _, r, psi, c2, c3 = evaluate_chi(final_chi)
     f = (1. - chi2 / init_pos_mag * c2).reshape(-1, 1)
     g = (dt - chi3 / sqrt_mu * c3).reshape(-1, 1)
     f_dot = (sqrt_mu / (r * init_pos_mag) * final_chi * (psi * c3 - 1.)).reshape(-1, 1)
