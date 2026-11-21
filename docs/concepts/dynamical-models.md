@@ -43,13 +43,29 @@ g(r)\left(A_1 \hat{\mathbf{r}} + A_2 \hat{\mathbf{t}} + A_3 \hat{\mathbf{n}}\rig
 
 Here \( r \) is the heliocentric distance. The unit vectors \( \hat{\mathbf{r}} \), \( \hat{\mathbf{t}} \), and
 \( \hat{\mathbf{n}} \) are the orbital radial, transverse, and normal directions. The parameters \( A_i \)
-\((i=1,2,3)\) are fitted acceleration parameters at a heliocentric distance of `1 au`. `A1` is radial, `A2` is
-transverse, and `A3` is normal. \( g(r) \) is a heliocentric-distance law.
+\((i=1,2,3)\) are acceleration scale parameters in `au / day^2`. `A1` is radial, `A2` is
+transverse, and `A3` is normal. \( g(r) \) is a heliocentric-distance law. The default laws are normalized
+to \(g(1\,\mathrm{au})=1\).
 
 For cometary outgassing, DiffOrb uses the Marsden cometary outgassing model.[^marsden] In this model, \( g(r) \)
 represents the sublimation rate as a function of heliocentric distance. The default \( g(r) \) corresponds to water-ice
 sublimation. Its shape parameters can be changed to represent sublimation processes of other materials, such as sodium
 or forsterite sublimation.[^sekanina-2015][^sekanina-2014]
+
+An optional time lag `DT`, in TDB days, makes the outgassing asymmetric:
+
+\[
+\mathbf{a}_{\mathrm{ng}}(t) =
+g\!\left(\widetilde r(t-\mathrm{DT})\right)
+\left(A_1\hat{\mathbf r}(t)+A_2\hat{\mathbf t}(t)+A_3\hat{\mathbf n}(t)\right).
+\]
+
+Here \(\widetilde r\) is evaluated by propagating the current heliocentric state
+on its osculating two-body orbit under the Sun's gravity. The RTN basis remains
+at the current epoch. Positive `DT` delays the activity peak until after
+perihelion; zero gives the symmetric model.[^sitarski-1994] `DT` can be fixed or
+jointly estimated with the acceleration components and orbital state. See
+[Estimate Nongravitational Parameters In Differential Correction](../guides/estimate-nongravitational-parameters-in-differential-correction.md#5-fix-or-estimate-the-outgassing-lag).
 
 By setting
 
@@ -86,6 +102,8 @@ The force model also does not choose the numerical method. That belongs to the i
 the sections on Solar System equations of motion.
 [^marsden]: Marsden, B. G., Sekanina, Z., & Yeomans, D. K. (1973). *Comets and nongravitational forces. V*. The
 Astronomical Journal, 78, 211-225. <https://doi.org/10.1086/111402>
+[^sitarski-1994]: Sitarski, G. (1994). *On the Perihelion Asymmetry for Investigations of the Nongravitational
+Motion of Comets*. Acta Astronomica, 44, 91-98. <https://acta.astrouw.edu.pl/Vol44/n1/pap_44_1_8.pdf>
 [^yarkovsky]: Vokrouhlicky, D., Bottke, W. F., Chesley, S. R., Scheeres, D. J., & Statler, T. S. (2015). *The
 Yarkovsky and YORP Effects*. In P. Michel, F. DeMeo, & W. Bottke (eds.), *Asteroids IV*, 509-531.
 <https://doi.org/10.2458/azu_uapress_9780816532131-ch027>

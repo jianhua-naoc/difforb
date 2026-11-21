@@ -265,13 +265,18 @@ def test_earth_j2_requires_three_component_pole():
         EarthJ2Perturbation(body, pole_unit_vec=[0.0, 1.0])
 
 
-def test_compute_rtn_distance_law_non_grav_acceleration_axis_case():
+@pytest.mark.parametrize(
+    ("DT", "expected_scale"),
+    [(None, 0.25), (0.0, 0.25), (13.0 / 6.0, 0.16), (-13.0 / 6.0, 0.16)],
+)
+def test_compute_rtn_distance_law_non_grav_acceleration_axis_case(DT, expected_scale):
     pos = jnp.asarray([2.0, 0.0, 0.0], dtype=float)
-    vel = jnp.asarray([0.0, 0.03, 0.0], dtype=float)
+    vel = jnp.asarray([0.0, 1.0, 0.0], dtype=float)
     pos_sun = jnp.zeros(3, dtype=float)
     vel_sun = jnp.zeros(3, dtype=float)
     a1, a2, a3 = 1.0e-10, -2.0e-10, 3.0e-10
-    expected = 0.25 * jnp.asarray([a1, a2, a3], dtype=float)
+    # Barker's equation gives r = 2.5 au at DT = +/-13/6 days for q = 2 au and mu = 1.
+    expected = expected_scale * jnp.asarray([a1, a2, a3], dtype=float)
 
     actual = compute_rtn_distance_law_non_grav_acceleration(
         pos=pos,
@@ -286,6 +291,8 @@ def test_compute_rtn_distance_law_non_grav_acceleration_axis_case():
         m=2.0,
         n=1.0,
         k=0.0,
+        mu=1.0,
+        DT=DT,
     )
 
     print(
@@ -347,6 +354,28 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
             [1.0e-8, 2.0e-8, 3.0e-8],
         ),
         (
+            "outgassing_fixed_dt",
+            CometOutgassingEffect(
+                sun=FakeEphemerisBody(pos=(0.0, 0.0, 0.0)),
+                estimated_params=(),
+                A1=1.0e-8,
+                DT=12.0,
+            ),
+            [],
+            [],
+        ),
+        (
+            "outgassing_estimated_dt",
+            CometOutgassingEffect(
+                sun=FakeEphemerisBody(pos=(0.0, 0.0, 0.0)),
+                estimated_params=("A1", "DT"),
+                A1=1.0e-8,
+                DT=12.0,
+            ),
+            ["Outgassing_A1", "Outgassing_DT"],
+            [1.0e-8, 12.0],
+        ),
+        (
             "yarkovsky",
             EmpiricalYarkovskyEffect(
                 sun=FakeEphemerisBody(pos=(0.0, 0.0, 0.0)),
@@ -367,6 +396,9 @@ def test_rtn_distance_law_effect_call_and_estimated_params():
     ],
 )
 def test_specialized_rtn_effect_param_contracts(label, force, expected_names, expected_params):
+    expected_params = jnp.asarray(expected_params, dtype=float)
+    updated = force.update_estimated_params(2.0 * expected_params)
+
     print(
         "[force_model.rtn.specialized] "
         f"label={label:<18} "
@@ -374,7 +406,8 @@ def test_specialized_rtn_effect_param_contracts(label, force, expected_names, ex
     )
 
     assert force.get_estimated_param_names() == expected_names
-    assert_allclose(force.get_estimated_params(), jnp.asarray(expected_params, dtype=float), atol=0.0, rtol=0.0)
+    assert_allclose(force.get_estimated_params(), expected_params, atol=0.0, rtol=0.0)
+    assert_allclose(updated.get_estimated_params(), 2.0 * expected_params, atol=0.0, rtol=0.0)
 
 
 def test_force_model_sums_forces():

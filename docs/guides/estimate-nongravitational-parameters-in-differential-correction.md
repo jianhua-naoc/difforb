@@ -18,7 +18,7 @@ DiffOrb currently supports these built-in non-gravitational models:
 
 | Model | Fitted parameters | Main use |
 | --- | --- | --- |
-| `CometOutgassingEffect` | Any subset of `A1`, `A2`, and `A3` | Symmetric comet outgassing |
+| `CometOutgassingEffect` | Any subset of `A1`, `A2`, `A3`, and `DT` | Comet outgassing with an optional activity lag |
 | `EmpiricalYarkovskyEffect` | `A2` | Empirical transverse drift |
 | `EmpiricalRadiationPressure` | `A1` | Empirical radial radiation pressure |
 
@@ -152,17 +152,52 @@ outgassing = CometOutgassingEffect(
 The `CometOutgassingEffect(...)` arguments are:
 
 - `sun`: an `EphemerisBody` object for the Sun.
-- `estimated_params`: names of the `A` parameters to fit. Use any subset of `("A1", "A2", "A3")`. Use `()` when all `A` parameters should stay fixed.
+- `estimated_params`: names to fit. Use any subset of `("A1", "A2", "A3", "DT")`. Use `()` when all parameters should stay fixed.
 - `A1`, `A2`, `A3`: radial, transverse, and normal acceleration parameters in `au / day^2`. Listed parameters are initial fitted values. Unlisted parameters are fixed values.
 - `r0`: distance scale in `au`.
 - `alpha`, `m`, `n`, `k`: fixed shape parameters for the radial distance law `g(r) = alpha * (r / r0)^(-m) * (1 + (r / r0)^n)^(-k)`.
 - `param_prefix`: prefix used in exposed parameter names.
+- `DT`: lag in TDB days, default `0.0`. Positive values delay the activity peak until after perihelion.
 
 Choose the term that matches the effect you want to test. Do not treat a parameter as physical unless the observation arc, force model, and covariance checks support it.
 
+## 5. Fix or estimate the outgassing lag
+
+`DT` shifts the distance used by the sublimation law to `r(t - DT)`. The shifted
+distance is calculated along the current osculating two-body orbit. The force
+direction uses the current RTN frame. `DT=0.0` gives the symmetric Marsden model.
+
+The same `estimated_params` argument selects whether the lag stays fixed or is
+estimated with the acceleration components and orbital state:
+
+```python
+from difforb.dynamics import CometOutgassingEffect
+
+fixed_lag = CometOutgassingEffect(
+    sun, A1=1.0e-8, A2=2.0e-8, DT=12.0,
+    estimated_params=("A1", "A2"),
+)
+fitted_lag = CometOutgassingEffect(
+    sun, A1=1.0e-8, A2=2.0e-8, DT=12.0,
+    estimated_params=("A1", "A2", "DT"),
+)
+
+print("FIXED_LAG_PARAMS", fixed_lag.get_estimated_param_names())
+print("FITTED_LAG_PARAMS", fitted_lag.get_estimated_param_names())
+```
+
+```text title="Output"
+FIXED_LAG_PARAMS ['Outgassing_A1', 'Outgassing_A2']
+FITTED_LAG_PARAMS ['Outgassing_A1', 'Outgassing_A2', 'Outgassing_DT']
+```
+
+Add either effect to the `DynamicSystem` and run differential correction as above.
+The fixed case retains `DT=12.0`; the fitted case starts from `12.0` days and
+includes its uncertainty and correlations in the fitted covariance.
+
 ## Verification
 
-The force-model snippets above were checked with a local `de441.bsp` kernel. The differential-correction output in section 2 was produced with the full setup from [Run Differential Correction From An Initial Orbit](run-differential-correction-from-an-initial-orbit.md), but with the force model from section 1. That setup provides the local `2025_BC10-online.psv` observations, initial orbit, integrator, weight policy, debias policy, and outlier policy. The fitted `A2` value is not a physical estimate for `2025 BC10`. It only checks the API path and result fields.
+The force-model snippets above were checked with local DE441 kernels, including the test excerpt for the lag examples. The differential-correction output in section 2 was produced with the full setup from [Run Differential Correction From An Initial Orbit](run-differential-correction-from-an-initial-orbit.md), but with the force model from section 1. That setup provides the local `2025_BC10-online.psv` observations, initial orbit, integrator, weight policy, debias policy, and outlier policy. The fitted `A2` value is not a physical estimate for `2025 BC10`. It only checks the API path and result fields.
 
 ## Common Mistakes
 
