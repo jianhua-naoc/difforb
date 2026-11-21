@@ -56,12 +56,12 @@ from difforb.spk import set_default_ephemeris
 
 set_default_ephemeris("/path/to/de441.bsp")
 
-t0 = Time.from_tdb_date(2025, 1, 2)
-t1 = Time.from_tdb_date(2025, 2, 15)
-t_query = Time.from_tdb_date(2025, 1, 20)
+t0 = Time.from_tdb_date(2025, 1, 2).tdb()
+t1 = Time.from_tdb_date(2025, 2, 15).tdb()
+t_query = Time.from_tdb_date(2025, 1, 20).tdb()
 
 state0 = State(
-    tdb=t0.tdb(),
+    tdb=t0,
     pos=[1.685775738339898, -1.336388854313325, -0.2144927004440800],
     vel=[0.008995712853117517, 0.006985684417802803, 0.004020851173846060],
     frame=BCRS,
@@ -70,8 +70,8 @@ state0 = State(
 force_model = DynamicSystem.from_standard_system().build_force_model()
 integrator = NumericalIntegrator(method="IAS15", tol=1e-12)
 
-body = SmallBody.create(state0).propagate(t0.tdb(), t1.tdb(), force_model, integrator)
-state = body.state(t_query.tdb(), frame=BCRS)
+body = SmallBody.create(state0).propagate(t0, t1, force_model, integrator)
+state = body.state(t_query, frame=BCRS)
 
 print(state.frame.name)
 print(state.pos)
